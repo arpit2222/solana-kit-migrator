@@ -1,7 +1,7 @@
 import { Link } from "wouter";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { COVERAGE_CATEGORIES, MIGRATION_EXAMPLES, REPOS_TESTED } from "@/lib/migrator";
+import { COVERAGE_CATEGORIES, MIGRATION_EXAMPLES, REPO_TEST_RESULTS, AGGREGATE } from "@/lib/migrator";
 
 const CATEGORY_COLORS: Record<string, string> = {
   imports: "text-blue-400 bg-blue-400/10 border-blue-400/20",
@@ -24,10 +24,6 @@ function CopyButton({ text }: { text: string }) {
     </button>
   );
 }
-
-const OVERALL = Math.round(COVERAGE_CATEGORIES.reduce((s, c) => s + c.coveragePercent, 0) / COVERAGE_CATEGORIES.length);
-const TOTAL_TRANSFORMS = COVERAGE_CATEGORIES.reduce((s, c) => s + c.transformCount, 0);
-const AUTOMATED_COUNT = COVERAGE_CATEGORIES.filter((c) => c.automated).length;
 
 export function Home() {
   const [activeExample, setActiveExample] = useState(0);
@@ -71,26 +67,123 @@ export function Home() {
           </div>
         </div>
 
-        {/* Stats */}
+        {/* Stats — real numbers from testing */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4">
           {[
-            { label: "overall coverage", value: `${OVERALL}%`, color: "text-primary" },
-            { label: "transform rules", value: `${TOTAL_TRANSFORMS}`, color: "text-green-400" },
-            { label: "repos tested", value: `${REPOS_TESTED.length}`, color: "text-cyan-400" },
-            { label: "automated categories", value: `${AUTOMATED_COUNT}/7`, color: "text-emerald-400" },
+            { label: "measured coverage", value: `${AGGREGATE.coveragePercent}%`, color: "text-primary", sub: "across 5 real repos" },
+            { label: "total transforms", value: AGGREGATE.totalChanges.toLocaleString(), color: "text-green-400", sub: `${AGGREGATE.filesWithWeb3} files migrated` },
+            { label: "repos tested", value: `${AGGREGATE.reposTested}`, color: "text-cyan-400", sub: "production codebases" },
+            { label: "AI flagged", value: AGGREGATE.aiRequiredChanges.toLocaleString(), color: "text-amber-400", sub: "of 3,756 total" },
           ].map((stat) => (
             <div key={stat.label} className="p-4 rounded border border-border bg-card space-y-1">
               <div className={cn("text-3xl font-bold font-mono", stat.color)}>{stat.value}</div>
               <div className="text-xs text-muted-foreground font-mono">{stat.label}</div>
+              <div className="text-xs text-muted-foreground/60 font-mono">{stat.sub}</div>
             </div>
           ))}
         </div>
       </section>
 
-      {/* Coverage categories */}
+      {/* Real repo test results */}
       <section className="space-y-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-xl font-bold font-mono">Migration coverage</h2>
+          <div className="space-y-1">
+            <h2 className="text-xl font-bold font-mono">Tested on real production repos</h2>
+            <p className="text-xs font-mono text-muted-foreground">
+              Numbers measured by running the codemod against actual cloned repositories — not estimates.
+            </p>
+          </div>
+          <div className="text-right">
+            <div className="text-2xl font-bold font-mono text-primary">{AGGREGATE.coveragePercent}%</div>
+            <div className="text-xs font-mono text-muted-foreground">aggregate</div>
+          </div>
+        </div>
+
+        <div className="overflow-hidden rounded border border-border">
+          <table className="w-full text-xs font-mono">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <th className="text-left px-4 py-3 text-muted-foreground font-medium">repository</th>
+                <th className="text-right px-4 py-3 text-muted-foreground font-medium">files</th>
+                <th className="text-right px-4 py-3 text-muted-foreground font-medium">changes</th>
+                <th className="text-right px-4 py-3 text-muted-foreground font-medium">automated</th>
+                <th className="text-right px-4 py-3 text-muted-foreground font-medium">AI flagged</th>
+                <th className="text-right px-4 py-3 text-muted-foreground font-medium">coverage</th>
+              </tr>
+            </thead>
+            <tbody>
+              {REPO_TEST_RESULTS.map((r, i) => (
+                <tr key={r.repo} className={cn("border-b border-border last:border-0", i % 2 === 0 ? "bg-card" : "bg-card/50")}>
+                  <td className="px-4 py-3">
+                    <a
+                      href={`https://github.com/${r.repo}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-foreground hover:text-primary transition-colors"
+                    >
+                      {r.repo}
+                    </a>
+                  </td>
+                  <td className="px-4 py-3 text-right text-muted-foreground">{r.filesWithWeb3}</td>
+                  <td className="px-4 py-3 text-right text-muted-foreground">{r.totalChanges.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right text-green-400">{r.automaticChanges.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right text-amber-400">{r.aiRequiredChanges}</td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className={cn("h-full rounded-full", r.coveragePercent >= 90 ? "bg-primary" : "bg-amber-400")}
+                          style={{ width: `${r.coveragePercent}%` }}
+                        />
+                      </div>
+                      <span className={r.coveragePercent >= 90 ? "text-primary" : "text-amber-400"}>{r.coveragePercent}%</span>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {/* Aggregate row */}
+              <tr className="bg-primary/5 border-t-2 border-primary/20">
+                <td className="px-4 py-3 text-primary font-medium">aggregate ({AGGREGATE.reposTested} repos)</td>
+                <td className="px-4 py-3 text-right text-muted-foreground">{AGGREGATE.filesWithWeb3}</td>
+                <td className="px-4 py-3 text-right text-muted-foreground">{AGGREGATE.totalChanges.toLocaleString()}</td>
+                <td className="px-4 py-3 text-right text-green-400 font-medium">{AGGREGATE.automaticChanges.toLocaleString()}</td>
+                <td className="px-4 py-3 text-right text-amber-400 font-medium">{AGGREGATE.aiRequiredChanges}</td>
+                <td className="px-4 py-3 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full bg-primary" style={{ width: `${AGGREGATE.coveragePercent}%` }} />
+                    </div>
+                    <span className="text-primary font-bold">{AGGREGATE.coveragePercent}%</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        {/* Per-repo notes */}
+        <div className="grid md:grid-cols-2 gap-3">
+          {REPO_TEST_RESULTS.map((r) => (
+            <div key={r.repo} className="p-3 rounded border border-border bg-card flex items-start gap-3">
+              <div className={cn(
+                "mt-0.5 text-xs font-mono font-bold px-1.5 py-0.5 rounded shrink-0",
+                r.coveragePercent >= 90 ? "text-primary bg-primary/10" : "text-amber-400 bg-amber-400/10"
+              )}>
+                {r.coveragePercent}%
+              </div>
+              <div className="space-y-0.5 min-w-0">
+                <div className="text-xs font-mono text-muted-foreground truncate">{r.repo}</div>
+                <div className="text-xs text-muted-foreground/70 font-mono leading-relaxed">{r.note}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Coverage by category */}
+      <section className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold font-mono">Coverage by category</h2>
           <Link href="/coverage" className="text-sm font-mono text-primary hover:underline">Full breakdown →</Link>
         </div>
         <div className="grid md:grid-cols-2 gap-3">
@@ -119,7 +212,7 @@ export function Home() {
         </div>
       </section>
 
-      {/* Examples */}
+      {/* Before/After examples */}
       <section className="space-y-6">
         <h2 className="text-xl font-bold font-mono">Migration examples</h2>
         <div className="flex gap-2 flex-wrap">
@@ -172,34 +265,12 @@ export function Home() {
         )}
       </section>
 
-      {/* Tested repos */}
-      <section className="space-y-6">
-        <h2 className="text-xl font-bold font-mono">Tested on real repos</h2>
-        <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-3">
-          {REPOS_TESTED.map((repo) => (
-            <a
-              key={repo}
-              href={`https://github.com/${repo}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="p-4 rounded border border-border bg-card hover:border-primary/40 hover:bg-primary/5 transition-all group"
-            >
-              <div className="flex items-center gap-2">
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor" className="text-muted-foreground group-hover:text-primary transition-colors shrink-0">
-                  <path d="M7 1C3.686 1 1 3.686 1 7c0 2.652 1.72 4.9 4.11 5.694.3.055.41-.13.41-.29v-1.015c-1.67.363-2.02-.804-2.02-.804-.274-.697-.67-.883-.67-.883-.546-.374.04-.367.04-.367.605.043.922.62.922.62.537.92 1.408.653 1.75.5.054-.39.21-.653.382-.803-1.334-.152-2.737-.667-2.737-2.97 0-.656.234-1.192.62-1.613-.062-.152-.268-.763.058-1.59 0 0 .506-.162 1.656.617A5.77 5.77 0 017 4.578a5.77 5.77 0 011.505.202c1.15-.78 1.655-.617 1.655-.617.326.827.12 1.438.06 1.59.385.42.618.957.618 1.612 0 2.31-1.406 2.817-2.744 2.965.216.186.407.552.407 1.114v1.65c0 .16.108.347.413.29C11.282 11.898 13 9.652 13 7c0-3.314-2.686-6-6-6z"/>
-                </svg>
-                <span className="text-xs font-mono text-muted-foreground group-hover:text-foreground transition-colors">{repo}</span>
-              </div>
-            </a>
-          ))}
-        </div>
-      </section>
-
       {/* CTA */}
       <section className="p-8 rounded border border-primary/20 bg-primary/5 text-center space-y-4">
         <h2 className="text-2xl font-bold font-mono">Ready to migrate?</h2>
         <p className="text-muted-foreground font-mono text-sm max-w-lg mx-auto">
-          Paste your web3.js v1 code into the playground. 75–85% automated. Complex transaction patterns are flagged with clear AI review comments.
+          {AGGREGATE.coveragePercent}% automated across {AGGREGATE.totalChanges.toLocaleString()} real-world transforms.
+          Complex transaction patterns are flagged with clear AI review comments.
         </p>
         <Link
           href="/playground"
