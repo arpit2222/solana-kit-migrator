@@ -1,0 +1,120 @@
+THE REAL PICTURE: What's Actually Unclaimed
+After reading all 28 submissions in depth, here's the honest gap map:
+Completely uncovered from the approved list:
+
+@solana/web3.js v1 → @solana/kit is still contestable (quality varies wildly)
+Anchor IDL v0 → v1 — IDLift covers it partially but is weak on documentation
+
+Uncovered from the approved list AND low competition:
+
+React Router v6 → v7 — 1 weak submission, massive ecosystem (used everywhere)
+Jest → Vitest — 1 submission but it's actually pretty good
+Tailwind v3 → v4 — 1 submission but it's actually pretty good
+
+The $2,000 framework adoption prize — still completely unclaimed by everyone.
+
+🏆 THE ONE PROJECT YOU SHOULD BUILD
+@solana/web3.js v1 → @solana/kit — The Definitive Migration, Done Right
+Here's why this is the single best opportunity left:
+1. It's the hardest migration in the entire list. The Solana JS SDK wasn't just updated — it was completely rewritten from scratch. This means the migration complexity is genuinely XL-tier (worth $800 base), not S or M. The other Solana submissions (solana-web3js-to-kit, SolSweep, Solana KitShift) all have weaknesses — vague coverage, only one repo tested, or overstated "zero hallucinations" claims that don't hold up to scrutiny.
+2. The competition in this category is beatable. Unlike ethers.js v5→v6 where DoubleSigma is a fortress, the Solana submissions are all individually weak. You can genuinely out-execute them.
+3. Solana is the hottest ecosystem right now. There are hundreds of production Solana apps still on web3.js v1. The real-world impact is enormous, which matters for the case study and adoption prizes.
+4. The $2,000 adoption prize is genuinely achievable here. The Solana Foundation, the @solana/kit maintainers (anza-xyz), and major Solana tooling projects (Anchor, Metaplex) are all active open-source communities. A high-quality codemod could realistically get referenced in the official migration guide at solana.com/developers — that's your $2,000.
+5. It's an XL migration, not an M. The breaking changes between web3.js v1 and @solana/kit are massive. This justifies the largest base prize tier ($800) and gives you more surface area to demonstrate superior coverage vs. competitors.
+
+EXACTLY WHAT TO BUILD — STEP BY STEP
+Project Name: solana-web3js-to-kit (or solana-kit-migrator)
+The Breaking Changes You Must Automate (Full XL Recipe)
+The migration from @solana/web3.js v1 to @solana/kit involves these major categories — each is a family of AST transforms:
+A. Import rewrites (highest ROI, deterministic)
+
+@solana/web3.js → split into @solana/kit, @solana/accounts, @solana/transactions, @solana/rpc, etc.
+Every named import needs remapping to the new package structure
+
+B. Connection → RPC Client
+
+new Connection(url) → createSolanaRpc(url) + createSolanaRpcSubscriptions(url)
+connection.getBalance() → rpc.getBalance().send()
+connection.getAccountInfo() → rpc.getAccountInfo().send()
+All .send() patterns (new async model)
+
+C. Keypair / Signer changes
+
+Keypair.generate() → await generateKeyPairSigner()
+Keypair.fromSecretKey(bytes) → await createKeyPairSignerFromBytes(bytes)
+keypair.publicKey → signer.address
+keypair.secretKey → deprecated pattern, flag for AI
+
+D. PublicKey → Address
+
+new PublicKey("abc") → address("abc")
+PublicKey.findProgramAddressSync() → await getProgramDerivedAddress()
+SystemProgram.programId → SYSTEM_PROGRAM_ADDRESS
+TOKEN_PROGRAM_ID → TOKEN_PROGRAM_ADDRESS
+
+E. Transaction model (the hardest part)
+
+new Transaction().add(ix) → pipe(createTransaction({version: 0}), appendTransactionMessageInstructions([ix]))
+Transaction.serialize() → new signing + serialization pipeline
+sendAndConfirmTransaction() → sendAndConfirmTransactionFactory()
+This section leaves most for AI — flag with // TODO: AI_REQUIRED
+
+F. Buffer / Borsh encoding
+
+bs58.encode(buffer) → getBase58Encoder().encode(bytes)
+Buffer usage → Uint8Array throughout
+
+G. Lamport / SOL utilities
+
+LAMPORTS_PER_SOL → LAMPORTS_PER_SOL (same name, different import)
+web3.LAMPORTS_PER_SOL → direct constant
+
+Target Coverage: 75-85% deterministic, 15-25% flagged for AI
+The transaction-building section is genuinely complex and non-deterministic — don't pretend to automate it. Flag it honestly. Judges will respect that more than fake 100% claims.
+Repositories to Test On (Pre-selected for maximum credibility)
+
+solana-labs/example-helloworld (official Solana Foundation repo) — instant credibility
+coral-xyz/anchor test fixtures — shows Anchor compatibility
+metaplex-foundation/mpl-token-metadata JS SDK — major ecosystem project
+jup-ag/jupiter-core or any Jupiter SDK — largest Solana DEX
+Dialect/sdk — messaging protocol, web3.js heavy
+
+Testing on 5 repos, especially official Solana Foundation repos, dramatically increases your scoring and story.
+
+The 3-Layer Execution Plan (Maximize All Prize Categories)
+Layer 1 — Base Recipe Prize ($800 XL)
+Build the codemod using jssg (ast-grep), structured as a Codemod registry workflow. Cover all the A through G categories above. Write at least 20 test fixtures. Test on 5 real repos. Publish to the Codemod registry following the official guide.
+Layer 2 — Public Case Study ($200)
+Document your migration of one major repo in detail:
+
+Before/after diff stats
+Coverage breakdown by category (imports: 100%, connection: 90%, keypair: 85%, transactions: 30% — AI handles rest)
+Exact time comparison: manual estimate vs. automated
+Screenshot of the registry entry running
+Publish as a blog post or detailed GitHub README
+
+Layer 3 — Official Adoption ($2,000 — the game changer)
+This is where you separate yourself from the entire field. Do these things:
+
+File a PR or issue to the official @solana/web3.js migration guide (anza-xyz/solana-web3.js repo) with your codemod referenced in the upgrade instructions.
+Contact the Anza team on Discord/Twitter — they maintain @solana/kit and have an explicit interest in migration tooling. Their GitHub is anza-xyz.
+Post in the Solana tech Discord (#developer-resources channel) — the community is active and adoption comes fast when the tool is good.
+Even a reply/acknowledgment from a maintainer saying "this is useful, we'll link it" counts toward the adoption prize.
+
+Potential total: $800 + $200 + $2,000 = $3,000 (the maximum)
+
+What Makes Your Submission Unbeatable
+The existing 3 Solana submissions all share the same weaknesses:
+
+Tested on only 1 repo (or none mentioned)
+No case study published
+No attempt at framework adoption
+Coverage claimed without detailed breakdowns
+
+Your submission beats them by being:
+
+Tested on 5 named repos with real metrics for each
+Having an honest coverage breakdown by migration category (not just one number)
+Being published to the Codemod registry and verified
+Having a detailed public case study
+Actually reaching out to Solana Foundation maintainers

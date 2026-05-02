@@ -5,7 +5,8 @@
  * Solana Kit Migrator API
  * OpenAPI spec version: 0.1.0
  */
+import type { MigrationExample } from "./migrationExample";
 
-export interface HealthStatus {
-  status: string;
+export interface ExampleList {
+  examples: MigrationExample[];
 }
