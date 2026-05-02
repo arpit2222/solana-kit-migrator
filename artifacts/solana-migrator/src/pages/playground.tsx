@@ -49,11 +49,52 @@ console.log('PDA:', pda.toBase58());
 console.log(SYSVAR_RENT_PUBKEY.toBase58());
 `;
 
+// Convert any GitHub URL form to a raw.githubusercontent.com URL
+function toRawGitHubUrl(input: string): string | null {
+  const trimmed = input.trim();
+
+  // Already raw
+  if (trimmed.startsWith("https://raw.githubusercontent.com/")) return trimmed;
+
+  // https://github.com/owner/repo/blob/branch/path → raw
+  const blobMatch = trimmed.match(
+    /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/
+  );
+  if (blobMatch) {
+    const [, owner, repo, branch, path] = blobMatch;
+    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
+  }
+
+  // https://github.com/owner/repo/raw/branch/path
+  const rawMatch = trimmed.match(
+    /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/raw\/([^/]+)\/(.+)$/
+  );
+  if (rawMatch) {
+    const [, owner, repo, branch, path] = rawMatch;
+    return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
+  }
+
+  return null;
+}
+
+function isLikelyCode(text: string): boolean {
+  return (
+    text.includes("import") ||
+    text.includes("const ") ||
+    text.includes("function ") ||
+    text.includes("export ")
+  );
+}
+
 function CopyButton({ text, label = "copy" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
-      onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
+      onClick={() => {
+        navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1800);
+      }}
       className="text-xs font-mono px-2 py-1 rounded bg-accent hover:bg-accent/80 text-muted-foreground hover:text-foreground transition-all"
     >
       {copied ? "copied!" : label}
@@ -72,19 +113,10 @@ function downloadFile(content: string, filename: string) {
 }
 
 function encodeShare(code: string): string {
-  try {
-    return btoa(encodeURIComponent(code));
-  } catch {
-    return "";
-  }
+  try { return btoa(encodeURIComponent(code)); } catch { return ""; }
 }
-
 function decodeShare(encoded: string): string {
-  try {
-    return decodeURIComponent(atob(encoded));
-  } catch {
-    return "";
-  }
+  try { return decodeURIComponent(atob(encoded)); } catch { return ""; }
 }
 
 function ShareButton({ code }: { code: string }) {
@@ -107,11 +139,32 @@ function ShareButton({ code }: { code: string }) {
 }
 
 type TabId = "output" | "transforms";
+type FetchState = "idle" | "loading" | "error";
+
+// GitHub examples users can click to try instantly
+const GITHUB_EXAMPLES = [
+  {
+    label: "example-helloworld/hello_world.ts",
+    url: "https://github.com/solana-labs/example-helloworld/blob/master/src/client/hello_world.ts",
+  },
+  {
+    label: "solana-cookbook/get-account-info.ts",
+    url: "https://github.com/solana-developers/solana-cookbook/blob/master/code/core-concepts/accounts/get-account-info.en.ts",
+  },
+  {
+    label: "program-examples/transfer-sol.ts",
+    url: "https://github.com/solana-developers/program-examples/blob/main/basics/transfer-sol/native/tests/transfer-sol.test.ts",
+  },
+];
 
 export function Playground() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showGithubInput, setShowGithubInput] = useState(false);
+  const [githubUrl, setGithubUrl] = useState("");
+  const [fetchState, setFetchState] = useState<FetchState>("idle");
+  const [fetchError, setFetchError] = useState("");
+  const [fetchedFilename, setFetchedFilename] = useState("");
 
-  // Read URL hash for shared code
   const getInitialCode = () => {
     const hash = window.location.hash;
     const match = hash.match(/[#&]code=([^&]+)/);
@@ -126,7 +179,6 @@ export function Playground() {
   const [result, setResult] = useState<ReturnType<typeof migrateCode> | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("output");
 
-  // Auto-migrate if loaded from share link
   useEffect(() => {
     const hash = window.location.hash;
     if (hash.includes("code=")) {
@@ -140,7 +192,6 @@ export function Playground() {
     const r = migrateCode(code);
     setResult(r);
     setActiveTab("output");
-    // Update URL hash so the state is shareable
     const encoded = encodeShare(code);
     window.history.replaceState(null, "", `${window.location.pathname}#code=${encoded}`);
   };
@@ -150,9 +201,9 @@ export function Playground() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      setCode(text);
+      setCode(ev.target?.result as string);
       setResult(null);
+      setFetchedFilename(file.name);
     };
     reader.readAsText(file);
     e.target.value = "";
@@ -164,11 +215,60 @@ export function Playground() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      setCode(text);
+      setCode(ev.target?.result as string);
       setResult(null);
+      setFetchedFilename(file.name);
     };
     reader.readAsText(file);
+  };
+
+  const fetchGithubFile = async (urlInput: string) => {
+    const rawUrl = toRawGitHubUrl(urlInput);
+    if (!rawUrl) {
+      setFetchState("error");
+      setFetchError("Not a recognised GitHub file URL. Use a /blob/ link like: github.com/owner/repo/blob/main/file.ts");
+      return;
+    }
+
+    // Only allow .ts/.tsx/.js/.jsx/.mjs files
+    const ext = rawUrl.split("?")[0].split(".").pop()?.toLowerCase();
+    if (!ext || !["ts", "tsx", "js", "jsx", "mjs"].includes(ext)) {
+      setFetchState("error");
+      setFetchError("Only .ts, .tsx, .js, .jsx, and .mjs files are supported.");
+      return;
+    }
+
+    setFetchState("loading");
+    setFetchError("");
+    try {
+      const res = await fetch(rawUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      if (!isLikelyCode(text)) {
+        setFetchState("error");
+        setFetchError("File fetched but doesn't look like TypeScript/JavaScript. Check the URL points to a source file.");
+        return;
+      }
+      const filename = rawUrl.split("/").pop() ?? "file.ts";
+      setCode(text);
+      setResult(null);
+      setFetchedFilename(filename);
+      setFetchState("idle");
+      setShowGithubInput(false);
+      setGithubUrl("");
+      // Auto-migrate
+      const r = migrateCode(text);
+      setResult(r);
+      setActiveTab("output");
+    } catch (err) {
+      setFetchState("error");
+      setFetchError(`Failed to fetch: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleGithubSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (githubUrl.trim()) fetchGithubFile(githubUrl.trim());
   };
 
   const transforms: TransformDetail[] = result?.transforms ?? [];
@@ -178,18 +278,39 @@ export function Playground() {
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col">
       {/* Toolbar */}
-      <div className="border-b border-border px-6 py-3 flex items-center justify-between gap-4 bg-background shrink-0">
+      <div className="border-b border-border px-4 py-2.5 flex items-center justify-between gap-3 bg-background shrink-0 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => { setCode(SAMPLE_CODE); setResult(null); window.history.replaceState(null, "", window.location.pathname); }}
+            onClick={() => {
+              setCode(SAMPLE_CODE);
+              setResult(null);
+              setFetchedFilename("");
+              window.history.replaceState(null, "", window.location.pathname);
+            }}
             className="text-xs font-mono px-3 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
           >
             sample
           </button>
+
+          {/* GitHub URL button */}
+          <button
+            onClick={() => { setShowGithubInput((v) => !v); setFetchState("idle"); setFetchError(""); }}
+            className={cn(
+              "text-xs font-mono px-3 py-1.5 rounded border transition-all flex items-center gap-1.5",
+              showGithubInput
+                ? "border-primary/50 text-primary bg-primary/10"
+                : "border-border text-muted-foreground hover:text-foreground hover:bg-accent"
+            )}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+            </svg>
+            from GitHub
+          </button>
+
           <button
             onClick={() => fileInputRef.current?.click()}
             className="text-xs font-mono px-3 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-            title="Upload a .ts or .js file"
           >
             upload file
           </button>
@@ -201,18 +322,29 @@ export function Playground() {
             onChange={handleFileUpload}
           />
           <button
-            onClick={() => { setCode(""); setResult(null); window.history.replaceState(null, "", window.location.pathname); }}
+            onClick={() => {
+              setCode("");
+              setResult(null);
+              setFetchedFilename("");
+              window.history.replaceState(null, "", window.location.pathname);
+            }}
             className="text-xs font-mono px-3 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
           >
             clear
           </button>
+
+          {fetchedFilename && (
+            <span className="text-xs font-mono text-primary/70 border border-primary/20 bg-primary/5 px-2 py-1 rounded">
+              {fetchedFilename}
+            </span>
+          )}
         </div>
 
         <button
           onClick={handleMigrate}
           disabled={!code.trim()}
           className={cn(
-            "px-5 py-2 rounded font-mono text-sm font-medium transition-all flex items-center gap-2",
+            "px-5 py-2 rounded font-mono text-sm font-medium transition-all flex items-center gap-2 shrink-0",
             !code.trim()
               ? "bg-primary/40 text-primary-foreground/50 cursor-not-allowed"
               : "bg-primary text-primary-foreground hover:bg-primary/90"
@@ -224,6 +356,69 @@ export function Playground() {
           </svg>
         </button>
       </div>
+
+      {/* GitHub URL input panel */}
+      {showGithubInput && (
+        <div className="border-b border-border bg-card/60 px-4 py-3 shrink-0 space-y-3">
+          <form onSubmit={handleGithubSubmit} className="flex items-center gap-2">
+            <div className="flex-1 relative">
+              <input
+                type="text"
+                value={githubUrl}
+                onChange={(e) => { setGithubUrl(e.target.value); setFetchState("idle"); setFetchError(""); }}
+                placeholder="https://github.com/owner/repo/blob/main/src/client.ts"
+                className="w-full text-xs font-mono px-3 py-2 rounded border border-border bg-background text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:border-primary/50 transition-colors"
+                autoFocus
+                disabled={fetchState === "loading"}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={!githubUrl.trim() || fetchState === "loading"}
+              className={cn(
+                "text-xs font-mono px-4 py-2 rounded transition-all shrink-0",
+                fetchState === "loading"
+                  ? "bg-primary/40 text-primary-foreground/50 cursor-wait"
+                  : !githubUrl.trim()
+                    ? "bg-muted text-muted-foreground cursor-not-allowed"
+                    : "bg-primary text-primary-foreground hover:bg-primary/90"
+              )}
+            >
+              {fetchState === "loading" ? (
+                <span className="flex items-center gap-1.5">
+                  <svg className="animate-spin" width="10" height="10" viewBox="0 0 24 24" fill="none">
+                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="31.4" strokeDashoffset="10"/>
+                  </svg>
+                  fetching…
+                </span>
+              ) : "Fetch & Migrate"}
+            </button>
+          </form>
+
+          {fetchState === "error" && (
+            <div className="text-xs font-mono text-red-400 bg-red-400/10 border border-red-400/20 rounded px-3 py-2">
+              {fetchError}
+            </div>
+          )}
+
+          {/* Quick examples */}
+          <div className="space-y-1">
+            <div className="text-xs font-mono text-muted-foreground/50 uppercase tracking-wider">Try a real example:</div>
+            <div className="flex flex-wrap gap-2">
+              {GITHUB_EXAMPLES.map((ex) => (
+                <button
+                  key={ex.url}
+                  onClick={() => fetchGithubFile(ex.url)}
+                  disabled={fetchState === "loading"}
+                  className="text-xs font-mono px-2.5 py-1 rounded border border-border text-muted-foreground hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-all truncate max-w-xs"
+                >
+                  {ex.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Panels */}
       <div
@@ -237,7 +432,7 @@ export function Playground() {
             <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
               <span className="w-2 h-2 rounded-full bg-red-400/70" />
               web3.js v1 input
-              <span className="text-muted-foreground/40 text-xs">— or drag & drop a file</span>
+              <span className="text-muted-foreground/40 text-xs hidden sm:inline">— drag & drop a file</span>
             </div>
             <div className="flex items-center gap-1.5">
               <ShareButton code={code} />
@@ -246,9 +441,9 @@ export function Playground() {
           </div>
           <textarea
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => { setCode(e.target.value); }}
             className="flex-1 p-4 bg-background text-xs font-mono text-foreground resize-none focus:outline-none leading-relaxed"
-            placeholder="Paste your @solana/web3.js v1 code here, upload a file, or drag & drop..."
+            placeholder="Paste your @solana/web3.js v1 code here, upload a file, fetch from GitHub, or drag & drop..."
             spellCheck={false}
           />
         </div>
@@ -278,7 +473,7 @@ export function Playground() {
               <div className="pr-3 flex items-center gap-1.5">
                 <CopyButton text={result.transformedCode} label="copy output" />
                 <button
-                  onClick={() => downloadFile(result.transformedCode, "migrated.ts")}
+                  onClick={() => downloadFile(result.transformedCode, fetchedFilename ? `migrated-${fetchedFilename}` : "migrated.ts")}
                   className="text-xs font-mono px-2 py-1 rounded bg-accent hover:bg-accent/80 text-muted-foreground hover:text-foreground transition-all"
                 >
                   download
@@ -312,7 +507,7 @@ export function Playground() {
                       <path d="M2 9h14M9 2l7 7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-muted-foreground"/>
                     </svg>
                   </div>
-                  <p className="text-xs font-mono text-muted-foreground">Paste code, upload a .ts/.js file, or drag & drop — then click Migrate</p>
+                  <p className="text-xs font-mono text-muted-foreground">Paste, upload, or fetch from GitHub — then click Migrate</p>
                 </div>
               )
             ) : (
@@ -349,7 +544,7 @@ export function Playground() {
                       <div className="space-y-2 pt-2">
                         <div className="flex items-center gap-2 pb-1">
                           <div className="text-xs font-mono text-amber-400/70 uppercase tracking-wider">AI Required ({aiTransforms.length})</div>
-                          <div className="text-xs font-mono text-muted-foreground/50">— transaction architecture changes need manual review</div>
+                          <div className="text-xs font-mono text-muted-foreground/50">— structural rewrites need manual review</div>
                         </div>
                         {aiTransforms.map((t, i) => (
                           <div key={i} className="p-3 rounded border border-amber-400/20 bg-amber-400/5 space-y-2">
