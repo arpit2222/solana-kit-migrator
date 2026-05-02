@@ -1,8 +1,5 @@
 import { Router } from "express";
 import { randomUUID } from "crypto";
-import { db } from "@workspace/db";
-import { sessionsTable } from "@workspace/db";
-import { eq, desc } from "drizzle-orm";
 import {
   MigrateCodeBody,
   MigrateCodeResponse,
@@ -14,8 +11,25 @@ import { migrateCode } from "../lib/migrator.js";
 
 const router = Router();
 
+// In-memory session cache (last 50 sessions, resets on server restart)
+const sessionCache = new Map<string, {
+  id: string;
+  createdAt: string;
+  filename?: string;
+  originalCode: string;
+  transformedCode: string;
+  stats: {
+    totalChanges: number;
+    automaticChanges: number;
+    aiRequiredChanges: number;
+    coveragePercent: number;
+    byCategory: Record<string, number>;
+  };
+}>();
+const MAX_SESSIONS = 50;
+
 // POST /migrate
-router.post("/migrate", async (req, res) => {
+router.post("/migrate", (req, res) => {
   const parsed = MigrateCodeBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid request body" });
@@ -23,21 +37,24 @@ router.post("/migrate", async (req, res) => {
   }
 
   const { code, filename } = parsed.data;
-
   const result = migrateCode(code);
   const sessionId = randomUUID();
 
-  await db.insert(sessionsTable).values({
+  const session = {
     id: sessionId,
-    filename: filename ?? null,
+    createdAt: new Date().toISOString(),
+    filename: filename ?? undefined,
     originalCode: code,
     transformedCode: result.transformedCode,
-    totalChanges: result.stats.totalChanges,
-    automaticChanges: result.stats.automaticChanges,
-    aiRequiredChanges: result.stats.aiRequiredChanges,
-    coveragePercent: result.stats.coveragePercent,
-    byCategory: result.stats.byCategory,
-  });
+    stats: result.stats,
+  };
+
+  // Keep cache bounded
+  if (sessionCache.size >= MAX_SESSIONS) {
+    const oldest = sessionCache.keys().next().value;
+    if (oldest) sessionCache.delete(oldest);
+  }
+  sessionCache.set(sessionId, session);
 
   const response = MigrateCodeResponse.parse({
     transformedCode: result.transformedCode,
@@ -50,67 +67,30 @@ router.post("/migrate", async (req, res) => {
 });
 
 // GET /sessions
-router.get("/sessions", async (_req, res) => {
-  const rows = await db
-    .select()
-    .from(sessionsTable)
-    .orderBy(desc(sessionsTable.createdAt))
-    .limit(20);
-
-  const sessions = rows.map((r) => ({
-    id: r.id,
-    createdAt: r.createdAt.toISOString(),
-    filename: r.filename ?? undefined,
-    originalCode: r.originalCode,
-    transformedCode: r.transformedCode,
-    stats: {
-      totalChanges: r.totalChanges,
-      automaticChanges: r.automaticChanges,
-      aiRequiredChanges: r.aiRequiredChanges,
-      coveragePercent: r.coveragePercent,
-      byCategory: r.byCategory,
-    },
-  }));
+router.get("/sessions", (_req, res) => {
+  const sessions = Array.from(sessionCache.values())
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 20);
 
   const response = ListSessionsResponse.parse({ sessions });
   res.json(response);
 });
 
 // GET /sessions/:id
-router.get("/sessions/:id", async (req, res) => {
+router.get("/sessions/:id", (req, res) => {
   const parsed = GetSessionParams.safeParse(req.params);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid session id" });
     return;
   }
 
-  const rows = await db
-    .select()
-    .from(sessionsTable)
-    .where(eq(sessionsTable.id, parsed.data.id))
-    .limit(1);
-
-  if (rows.length === 0) {
+  const session = sessionCache.get(parsed.data.id);
+  if (!session) {
     res.status(404).json({ error: "Session not found" });
     return;
   }
 
-  const r = rows[0];
-  const response = GetSessionResponse.parse({
-    id: r.id,
-    createdAt: r.createdAt.toISOString(),
-    filename: r.filename ?? undefined,
-    originalCode: r.originalCode,
-    transformedCode: r.transformedCode,
-    stats: {
-      totalChanges: r.totalChanges,
-      automaticChanges: r.automaticChanges,
-      aiRequiredChanges: r.aiRequiredChanges,
-      coveragePercent: r.coveragePercent,
-      byCategory: r.byCategory,
-    },
-  });
-
+  const response = GetSessionResponse.parse(session);
   res.json(response);
 });
 
