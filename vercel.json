@@ -1,0 +1,11 @@
+{
+  "buildCommand": "pnpm --filter @workspace/solana-migrator build",
+  "outputDirectory": "artifacts/solana-migrator/dist/public",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
