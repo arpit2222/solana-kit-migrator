@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { migrateCode, type TransformDetail } from "@/lib/migrator";
 
@@ -12,89 +12,75 @@ const CATEGORY_COLORS: Record<string, string> = {
   lamports: "text-emerald-400 bg-emerald-400/10 border-emerald-400/20",
 };
 
-const SAMPLE_CODE = `import { Connection, Keypair, PublicKey, Transaction, SystemProgram, LAMPORTS_PER_SOL, sendAndConfirmTransaction, SYSVAR_RENT_PUBKEY } from '@solana/web3.js';
+const SAMPLE_CODE = `import {
+  Connection, Keypair, PublicKey, Transaction, SystemProgram,
+  LAMPORTS_PER_SOL, sendAndConfirmTransaction, SYSVAR_RENT_PUBKEY,
+  TransactionInstruction
+} from '@solana/web3.js';
 import bs58 from 'bs58';
 
-// Create connection
-const connection = new Connection('https://api.mainnet-beta.solana.com');
-
-// Generate keypair
+// Create connection & fund payer
+const connection = new Connection('https://api.mainnet-beta.solana.com', 'confirmed');
 const payer = Keypair.generate();
 const recipient = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
 
-// Get balance
+// Check balance
 const balance = await connection.getBalance(payer.publicKey);
-console.log(\`Balance: \${balance / LAMPORTS_PER_SOL} SOL\`);
+const rentMin = await connection.getMinimumBalanceForRentExemption(165);
+const { blockhash } = await connection.getRecentBlockhash();
+const version = await connection.getVersion();
+console.log(\`Balance: \${balance / LAMPORTS_PER_SOL} SOL, rent: \${rentMin}, version: \${JSON.stringify(version)}\`);
 
-// Encode
+// Encode / decode
 const encoded = bs58.encode(Buffer.from('hello world'));
+const decoded = bs58.decode(encoded);
 
-// Build transaction (auto-migrated parts)
+// Build & send transaction (named vars → fully automated)
 let tx = new Transaction();
 tx.feePayer = payer.publicKey;
 tx.recentBlockhash = blockhash;
 tx = tx.add(transferIx);
-
-// Complex send (flagged for AI)
 await sendAndConfirmTransaction(connection, tx, [payer]);
 
-// PDA
+// PDA derivation
 const [pda] = PublicKey.findProgramAddressSync(
   [Buffer.from('seed'), payer.publicKey.toBuffer()],
   SystemProgram.programId
 );
 console.log('PDA:', pda.toBase58());
+console.log('equal?', pda.equals(recipient));
 
-// Sysvar
+// Sysvars & signature status
 console.log(SYSVAR_RENT_PUBKEY.toBase58());
+const statuses = await connection.getSignatureStatuses([txSig]);
+const simResult = await connection.simulateTransaction(tx);
 `;
 
-// Convert any GitHub URL form to a raw.githubusercontent.com URL
 function toRawGitHubUrl(input: string): string | null {
   const trimmed = input.trim();
-
-  // Already raw
   if (trimmed.startsWith("https://raw.githubusercontent.com/")) return trimmed;
-
-  // https://github.com/owner/repo/blob/branch/path → raw
-  const blobMatch = trimmed.match(
-    /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/
-  );
+  const blobMatch = trimmed.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/blob\/([^/]+)\/(.+)$/);
   if (blobMatch) {
     const [, owner, repo, branch, path] = blobMatch;
     return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
   }
-
-  // https://github.com/owner/repo/raw/branch/path
-  const rawMatch = trimmed.match(
-    /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/raw\/([^/]+)\/(.+)$/
-  );
+  const rawMatch = trimmed.match(/^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/raw\/([^/]+)\/(.+)$/);
   if (rawMatch) {
     const [, owner, repo, branch, path] = rawMatch;
     return `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/${path}`;
   }
-
   return null;
 }
 
 function isLikelyCode(text: string): boolean {
-  return (
-    text.includes("import") ||
-    text.includes("const ") ||
-    text.includes("function ") ||
-    text.includes("export ")
-  );
+  return text.includes("import") || text.includes("const ") || text.includes("function ") || text.includes("export ");
 }
 
 function CopyButton({ text, label = "copy" }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
-      onClick={() => {
-        navigator.clipboard.writeText(text);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1800);
-      }}
+      onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800); }}
       className="text-xs font-mono px-2 py-1 rounded bg-accent hover:bg-accent/80 text-muted-foreground hover:text-foreground transition-all"
     >
       {copied ? "copied!" : label}
@@ -106,31 +92,23 @@ function downloadFile(content: string, filename: string) {
   const blob = new Blob([content], { type: "text/plain" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
+  a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
 
-function encodeShare(code: string): string {
-  try { return btoa(encodeURIComponent(code)); } catch { return ""; }
-}
-function decodeShare(encoded: string): string {
-  try { return decodeURIComponent(atob(encoded)); } catch { return ""; }
-}
+function encodeShare(code: string): string { try { return btoa(encodeURIComponent(code)); } catch { return ""; } }
+function decodeShare(encoded: string): string { try { return decodeURIComponent(atob(encoded)); } catch { return ""; } }
 
 function ShareButton({ code }: { code: string }) {
   const [shared, setShared] = useState(false);
-  const handleShare = () => {
-    const encoded = encodeShare(code);
-    const url = `${window.location.origin}${window.location.pathname}#code=${encoded}`;
-    navigator.clipboard.writeText(url);
-    setShared(true);
-    setTimeout(() => setShared(false), 2000);
-  };
   return (
     <button
-      onClick={handleShare}
+      onClick={() => {
+        const url = `${window.location.origin}${window.location.pathname}#code=${encodeShare(code)}`;
+        navigator.clipboard.writeText(url);
+        setShared(true);
+        setTimeout(() => setShared(false), 2000);
+      }}
       className="text-xs font-mono px-2 py-1 rounded bg-accent hover:bg-accent/80 text-muted-foreground hover:text-foreground transition-all"
     >
       {shared ? "link copied!" : "share"}
@@ -138,40 +116,119 @@ function ShareButton({ code }: { code: string }) {
   );
 }
 
-type TabId = "output" | "transforms";
+// ── Diff engine ──────────────────────────────────────────────────────────────
+type DiffLine = { type: "same" | "add" | "remove" | "ai"; text: string };
+
+function buildLineDiff(before: string, after: string): { left: DiffLine[]; right: DiffLine[] } {
+  const a = before.split("\n");
+  const b = after.split("\n");
+
+  if (a.length > 500 || b.length > 500) {
+    return {
+      left: a.map((t) => ({ type: "same" as const, text: t })),
+      right: b.map((t) => ({ type: (t.includes("TODO:") ? "ai" : "same") as const, text: t })),
+    };
+  }
+
+  const m = a.length, n = b.length;
+  const dp = Array.from({ length: m + 1 }, () => new Int32Array(n + 1));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+
+  type Op = { t: "eq" | "del" | "ins"; a?: string; b?: string };
+  const ops: Op[] = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      ops.unshift({ t: "eq", a: a[i - 1], b: b[j - 1] }); i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.unshift({ t: "ins", b: b[j - 1] }); j--;
+    } else {
+      ops.unshift({ t: "del", a: a[i - 1] }); i--;
+    }
+  }
+
+  const left: DiffLine[] = [];
+  const right: DiffLine[] = [];
+  for (let k = 0; k < ops.length; k++) {
+    const op = ops[k];
+    if (op.t === "eq") {
+      left.push({ type: "same", text: op.a! });
+      right.push({ type: "same", text: op.b! });
+    } else if (op.t === "del") {
+      const next = ops[k + 1];
+      if (next?.t === "ins") {
+        left.push({ type: "remove", text: op.a! });
+        right.push({ type: next.b!.includes("TODO:") ? "ai" : "add", text: next.b! });
+        k++;
+      } else {
+        left.push({ type: "remove", text: op.a! });
+        right.push({ type: "same", text: "" });
+      }
+    } else {
+      left.push({ type: "same", text: "" });
+      right.push({ type: op.b!.includes("TODO:") ? "ai" : "add", text: op.b! });
+    }
+  }
+  return { left, right };
+}
+
+function DiffLineEl({ line, lineNum }: { line: DiffLine; lineNum: number | null }) {
+  const bg =
+    line.type === "remove" ? "bg-red-500/12" :
+    line.type === "add"    ? "bg-green-500/12" :
+    line.type === "ai"     ? "bg-amber-500/12" : "";
+  const text =
+    line.type === "remove" ? "text-red-300" :
+    line.type === "add"    ? "text-green-300" :
+    line.type === "ai"     ? "text-amber-300" : "text-foreground/75";
+  const marker =
+    line.type === "remove" ? <span className="text-red-400 select-none mr-1">−</span> :
+    line.type === "add"    ? <span className="text-green-400 select-none mr-1">+</span> :
+    line.type === "ai"     ? <span className="text-amber-400 select-none mr-1">!</span> :
+    <span className="select-none mr-1 opacity-0">·</span>;
+
+  return (
+    <div className={cn("flex items-start font-mono text-xs leading-5 px-2 min-h-[1.25rem]", bg)}>
+      {lineNum !== null ? (
+        <span className="select-none text-muted-foreground/30 w-7 shrink-0 text-right pr-2">{lineNum}</span>
+      ) : (
+        <span className="select-none w-7 shrink-0" />
+      )}
+      {marker}
+      <span className={cn("whitespace-pre-wrap break-all", text)}>{line.text}</span>
+    </div>
+  );
+}
+
+type TabId = "output" | "diff" | "transforms";
 type FetchState = "idle" | "loading" | "error";
 
-// GitHub examples users can click to try instantly
 const GITHUB_EXAMPLES = [
-  {
-    label: "example-helloworld/hello_world.ts",
-    url: "https://github.com/solana-labs/example-helloworld/blob/master/src/client/hello_world.ts",
-  },
-  {
-    label: "solana-cookbook/get-account-info.ts",
-    url: "https://github.com/solana-developers/solana-cookbook/blob/master/code/core-concepts/accounts/get-account-info.en.ts",
-  },
-  {
-    label: "program-examples/transfer-sol.ts",
-    url: "https://github.com/solana-developers/program-examples/blob/main/basics/transfer-sol/native/tests/transfer-sol.test.ts",
-  },
+  { label: "example-helloworld/hello_world.ts", url: "https://github.com/solana-labs/example-helloworld/blob/master/src/client/hello_world.ts" },
+  { label: "solana-cookbook/get-account-info.ts", url: "https://github.com/solana-developers/solana-cookbook/blob/master/code/core-concepts/accounts/get-account-info.en.ts" },
+  { label: "program-examples/transfer-sol.ts", url: "https://github.com/solana-developers/program-examples/blob/main/basics/transfer-sol/native/tests/transfer-sol.test.ts" },
+  { label: "program-examples/create-account.ts", url: "https://github.com/solana-developers/program-examples/blob/main/basics/create-account/native/tests/create-account.test.ts" },
 ];
 
 export function Playground() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [showGithubInput, setShowGithubInput] = useState(false);
   const [githubUrl, setGithubUrl] = useState("");
   const [fetchState, setFetchState] = useState<FetchState>("idle");
   const [fetchError, setFetchError] = useState("");
   const [fetchedFilename, setFetchedFilename] = useState("");
+  const [isAutoMigrating, setIsAutoMigrating] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
 
   const getInitialCode = () => {
     const hash = window.location.hash;
     const match = hash.match(/[#&]code=([^&]+)/);
-    if (match) {
-      const decoded = decodeShare(match[1]);
-      if (decoded) return decoded;
-    }
+    if (match) { const d = decodeShare(match[1]); if (d) return d; }
     return SAMPLE_CODE;
   };
 
@@ -179,21 +236,52 @@ export function Playground() {
   const [result, setResult] = useState<ReturnType<typeof migrateCode> | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("output");
 
+  // Auto-migrate on load if hash present
   useEffect(() => {
-    const hash = window.location.hash;
-    if (hash.includes("code=")) {
-      const r = migrateCode(getInitialCode());
-      setResult(r);
+    if (window.location.hash.includes("code=")) {
+      setResult(migrateCode(getInitialCode()));
     }
+  }, []);
+
+  // Keyboard shortcut: Cmd/Ctrl+Enter → migrate instantly
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+        e.preventDefault();
+        if (code.trim()) {
+          if (debounceRef.current) clearTimeout(debounceRef.current);
+          setIsAutoMigrating(false);
+          const r = migrateCode(code);
+          setResult(r);
+          setActiveTab("output");
+          window.history.replaceState(null, "", `${window.location.pathname}#code=${encodeShare(code)}`);
+        }
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [code]);
+
+  // Debounced real-time migration as user types
+  const handleCodeChange = useCallback((newCode: string) => {
+    setCode(newCode);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!newCode.trim()) { setResult(null); setIsAutoMigrating(false); return; }
+    setIsAutoMigrating(true);
+    debounceRef.current = setTimeout(() => {
+      setResult(migrateCode(newCode));
+      setIsAutoMigrating(false);
+    }, 600);
   }, []);
 
   const handleMigrate = () => {
     if (!code.trim()) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setIsAutoMigrating(false);
     const r = migrateCode(code);
     setResult(r);
     setActiveTab("output");
-    const encoded = encodeShare(code);
-    window.history.replaceState(null, "", `${window.location.pathname}#code=${encoded}`);
+    window.history.replaceState(null, "", `${window.location.pathname}#code=${encodeShare(code)}`);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -201,9 +289,12 @@ export function Playground() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setCode(ev.target?.result as string);
-      setResult(null);
+      const text = ev.target?.result as string;
+      setCode(text);
       setFetchedFilename(file.name);
+      const r = migrateCode(text);
+      setResult(r);
+      setActiveTab("output");
     };
     reader.readAsText(file);
     e.target.value = "";
@@ -215,65 +306,53 @@ export function Playground() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setCode(ev.target?.result as string);
-      setResult(null);
+      const text = ev.target?.result as string;
+      setCode(text);
       setFetchedFilename(file.name);
+      const r = migrateCode(text);
+      setResult(r);
+      setActiveTab("output");
     };
     reader.readAsText(file);
   };
 
   const fetchGithubFile = async (urlInput: string) => {
     const rawUrl = toRawGitHubUrl(urlInput);
-    if (!rawUrl) {
-      setFetchState("error");
-      setFetchError("Not a recognised GitHub file URL. Use a /blob/ link like: github.com/owner/repo/blob/main/file.ts");
-      return;
-    }
-
-    // Only allow .ts/.tsx/.js/.jsx/.mjs files
+    if (!rawUrl) { setFetchState("error"); setFetchError("Not a recognised GitHub file URL. Use a /blob/ link."); return; }
     const ext = rawUrl.split("?")[0].split(".").pop()?.toLowerCase();
-    if (!ext || !["ts", "tsx", "js", "jsx", "mjs"].includes(ext)) {
-      setFetchState("error");
-      setFetchError("Only .ts, .tsx, .js, .jsx, and .mjs files are supported.");
-      return;
-    }
-
-    setFetchState("loading");
-    setFetchError("");
+    if (!ext || !["ts", "tsx", "js", "jsx", "mjs"].includes(ext)) { setFetchState("error"); setFetchError("Only .ts, .tsx, .js, .jsx, and .mjs files are supported."); return; }
+    setFetchState("loading"); setFetchError("");
     try {
       const res = await fetch(rawUrl);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
-      if (!isLikelyCode(text)) {
-        setFetchState("error");
-        setFetchError("File fetched but doesn't look like TypeScript/JavaScript. Check the URL points to a source file.");
-        return;
-      }
+      if (!isLikelyCode(text)) { setFetchState("error"); setFetchError("File doesn't look like TypeScript/JavaScript."); return; }
       const filename = rawUrl.split("/").pop() ?? "file.ts";
       setCode(text);
-      setResult(null);
       setFetchedFilename(filename);
       setFetchState("idle");
       setShowGithubInput(false);
       setGithubUrl("");
-      // Auto-migrate
       const r = migrateCode(text);
       setResult(r);
-      setActiveTab("output");
+      setActiveTab("diff");
     } catch (err) {
       setFetchState("error");
       setFetchError(`Failed to fetch: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
-  const handleGithubSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (githubUrl.trim()) fetchGithubFile(githubUrl.trim());
-  };
+  const handleGithubSubmit = (e: React.FormEvent) => { e.preventDefault(); if (githubUrl.trim()) fetchGithubFile(githubUrl.trim()); };
 
-  const transforms: TransformDetail[] = result?.transforms ?? [];
-  const autoTransforms = transforms.filter((t) => !t.flaggedForAI);
-  const aiTransforms = transforms.filter((t) => t.flaggedForAI);
+  const allTransforms: TransformDetail[] = result?.transforms ?? [];
+  const visibleTransforms = categoryFilter ? allTransforms.filter((t) => t.category === categoryFilter) : allTransforms;
+  const autoTransforms = visibleTransforms.filter((t) => !t.flaggedForAI);
+  const aiTransforms = visibleTransforms.filter((t) => t.flaggedForAI);
+
+  const diff = result ? buildLineDiff(code, result.transformedCode) : null;
+
+  // Count changes by category
+  const changedLineCount = diff ? diff.right.filter((l) => l.type !== "same").length : 0;
 
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col">
@@ -281,25 +360,17 @@ export function Playground() {
       <div className="border-b border-border px-4 py-2.5 flex items-center justify-between gap-3 bg-background shrink-0 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           <button
-            onClick={() => {
-              setCode(SAMPLE_CODE);
-              setResult(null);
-              setFetchedFilename("");
-              window.history.replaceState(null, "", window.location.pathname);
-            }}
+            onClick={() => { setCode(SAMPLE_CODE); setResult(null); setFetchedFilename(""); setIsAutoMigrating(false); window.history.replaceState(null, "", window.location.pathname); }}
             className="text-xs font-mono px-3 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
           >
             sample
           </button>
 
-          {/* GitHub URL button */}
           <button
             onClick={() => { setShowGithubInput((v) => !v); setFetchState("idle"); setFetchError(""); }}
             className={cn(
               "text-xs font-mono px-3 py-1.5 rounded border transition-all flex items-center gap-1.5",
-              showGithubInput
-                ? "border-primary/50 text-primary bg-primary/10"
-                : "border-border text-muted-foreground hover:text-foreground hover:bg-accent"
+              showGithubInput ? "border-primary/50 text-primary bg-primary/10" : "border-border text-muted-foreground hover:text-foreground hover:bg-accent"
             )}
           >
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
@@ -308,56 +379,53 @@ export function Playground() {
             from GitHub
           </button>
 
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="text-xs font-mono px-3 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
-          >
+          <button onClick={() => fileInputRef.current?.click()} className="text-xs font-mono px-3 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all">
             upload file
           </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".ts,.tsx,.js,.jsx,.mjs"
-            className="hidden"
-            onChange={handleFileUpload}
-          />
+          <input ref={fileInputRef} type="file" accept=".ts,.tsx,.js,.jsx,.mjs" className="hidden" onChange={handleFileUpload} />
+
           <button
-            onClick={() => {
-              setCode("");
-              setResult(null);
-              setFetchedFilename("");
-              window.history.replaceState(null, "", window.location.pathname);
-            }}
+            onClick={() => { setCode(""); setResult(null); setFetchedFilename(""); setIsAutoMigrating(false); window.history.replaceState(null, "", window.location.pathname); }}
             className="text-xs font-mono px-3 py-1.5 rounded border border-border text-muted-foreground hover:text-foreground hover:bg-accent transition-all"
           >
             clear
           </button>
 
           {fetchedFilename && (
-            <span className="text-xs font-mono text-primary/70 border border-primary/20 bg-primary/5 px-2 py-1 rounded">
-              {fetchedFilename}
-            </span>
+            <span className="text-xs font-mono text-primary/70 border border-primary/20 bg-primary/5 px-2 py-1 rounded">{fetchedFilename}</span>
           )}
         </div>
 
-        <button
-          onClick={handleMigrate}
-          disabled={!code.trim()}
-          className={cn(
-            "px-5 py-2 rounded font-mono text-sm font-medium transition-all flex items-center gap-2 shrink-0",
-            !code.trim()
-              ? "bg-primary/40 text-primary-foreground/50 cursor-not-allowed"
-              : "bg-primary text-primary-foreground hover:bg-primary/90"
-          )}
-        >
-          Migrate
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-            <path d="M1 6h10M6 1l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-          </svg>
-        </button>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-mono text-muted-foreground/40 hidden sm:inline">⌘↵ to migrate</span>
+          <button
+            onClick={handleMigrate}
+            disabled={!code.trim()}
+            className={cn(
+              "px-5 py-2 rounded font-mono text-sm font-medium transition-all flex items-center gap-2 shrink-0",
+              !code.trim() ? "bg-primary/40 text-primary-foreground/50 cursor-not-allowed" : "bg-primary text-primary-foreground hover:bg-primary/90"
+            )}
+          >
+            {isAutoMigrating ? (
+              <>
+                <svg className="animate-spin" width="12" height="12" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeDasharray="31.4" strokeDashoffset="10"/>
+                </svg>
+                migrating…
+              </>
+            ) : (
+              <>
+                Migrate
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M1 6h10M6 1l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </>
+            )}
+          </button>
+        </div>
       </div>
 
-      {/* GitHub URL input panel */}
+      {/* GitHub panel */}
       {showGithubInput && (
         <div className="border-b border-border bg-card/60 px-4 py-3 shrink-0 space-y-3">
           <form onSubmit={handleGithubSubmit} className="flex items-center gap-2">
@@ -377,11 +445,7 @@ export function Playground() {
               disabled={!githubUrl.trim() || fetchState === "loading"}
               className={cn(
                 "text-xs font-mono px-4 py-2 rounded transition-all shrink-0",
-                fetchState === "loading"
-                  ? "bg-primary/40 text-primary-foreground/50 cursor-wait"
-                  : !githubUrl.trim()
-                    ? "bg-muted text-muted-foreground cursor-not-allowed"
-                    : "bg-primary text-primary-foreground hover:bg-primary/90"
+                fetchState === "loading" ? "bg-primary/40 text-primary-foreground/50 cursor-wait" : !githubUrl.trim() ? "bg-muted text-muted-foreground cursor-not-allowed" : "bg-primary text-primary-foreground hover:bg-primary/90"
               )}
             >
               {fetchState === "loading" ? (
@@ -394,14 +458,9 @@ export function Playground() {
               ) : "Fetch & Migrate"}
             </button>
           </form>
-
           {fetchState === "error" && (
-            <div className="text-xs font-mono text-red-400 bg-red-400/10 border border-red-400/20 rounded px-3 py-2">
-              {fetchError}
-            </div>
+            <div className="text-xs font-mono text-red-400 bg-red-400/10 border border-red-400/20 rounded px-3 py-2">{fetchError}</div>
           )}
-
-          {/* Quick examples */}
           <div className="space-y-1">
             <div className="text-xs font-mono text-muted-foreground/50 uppercase tracking-wider">Try a real example:</div>
             <div className="flex flex-wrap gap-2">
@@ -420,19 +479,15 @@ export function Playground() {
         </div>
       )}
 
-      {/* Panels */}
-      <div
-        className="flex-1 grid grid-cols-2 min-h-0 divide-x divide-border"
-        onDragOver={(e) => e.preventDefault()}
-        onDrop={handleDrop}
-      >
-        {/* Input */}
+      {/* Two-panel layout */}
+      <div className="flex-1 grid grid-cols-2 min-h-0 divide-x divide-border" onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
+        {/* Input panel */}
         <div className="flex flex-col min-h-0">
           <div className="px-4 py-2 border-b border-border flex items-center justify-between bg-card/50 shrink-0">
             <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
               <span className="w-2 h-2 rounded-full bg-red-400/70" />
               web3.js v1 input
-              <span className="text-muted-foreground/40 text-xs hidden sm:inline">— drag & drop a file</span>
+              <span className="text-muted-foreground/40 hidden sm:inline">— drag & drop a file</span>
             </div>
             <div className="flex items-center gap-1.5">
               <ShareButton code={code} />
@@ -441,30 +496,31 @@ export function Playground() {
           </div>
           <textarea
             value={code}
-            onChange={(e) => { setCode(e.target.value); }}
+            onChange={(e) => handleCodeChange(e.target.value)}
             className="flex-1 p-4 bg-background text-xs font-mono text-foreground resize-none focus:outline-none leading-relaxed"
-            placeholder="Paste your @solana/web3.js v1 code here, upload a file, fetch from GitHub, or drag & drop..."
+            placeholder="Paste your @solana/web3.js v1 code here, upload a file, fetch from GitHub, or drag & drop…"
             spellCheck={false}
           />
         </div>
 
-        {/* Output */}
+        {/* Output panel */}
         <div className="flex flex-col min-h-0">
+          {/* Tab bar */}
           <div className="border-b border-border flex items-center justify-between bg-card/50 shrink-0 px-0">
             <div className="flex">
-              {(["output", "transforms"] as TabId[]).map((tab) => (
+              {(["output", "diff", "transforms"] as TabId[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
                   className={cn(
                     "px-4 py-2.5 text-xs font-mono border-b-2 transition-all",
-                    activeTab === tab
-                      ? "border-primary text-primary"
-                      : "border-transparent text-muted-foreground hover:text-foreground"
+                    activeTab === tab ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
                   )}
                 >
                   {tab === "transforms"
-                    ? `transforms${transforms.length > 0 ? ` (${transforms.length})` : ""}`
+                    ? `transforms${allTransforms.length > 0 ? ` (${allTransforms.length})` : ""}`
+                    : tab === "diff"
+                    ? `diff${changedLineCount > 0 ? ` (${changedLineCount})` : ""}`
                     : "@solana/kit output"}
                 </button>
               ))}
@@ -482,44 +538,109 @@ export function Playground() {
             )}
           </div>
 
+          {/* Stats bar */}
           {result && (
-            <div className="px-4 py-2 border-b border-border bg-card/30 flex items-center gap-4 text-xs font-mono shrink-0 flex-wrap">
+            <div className="px-3 py-2 border-b border-border bg-card/30 flex items-center gap-2 text-xs font-mono shrink-0 flex-wrap">
               <span className="text-primary font-bold">{result.stats.coveragePercent}% automated</span>
+              <span className="text-muted-foreground/40">·</span>
               <span className="text-green-400">{result.stats.automaticChanges} auto</span>
               {result.stats.aiRequiredChanges > 0 && (
-                <span className="text-amber-400">{result.stats.aiRequiredChanges} need AI review</span>
+                <><span className="text-muted-foreground/40">·</span><span className="text-amber-400">{result.stats.aiRequiredChanges} AI</span></>
               )}
-              <span className="text-muted-foreground">{result.stats.totalChanges} total changes</span>
-              {Object.entries(result.stats.byCategory).map(([cat, count]) => (
-                <span key={cat} className="text-muted-foreground/60">{cat}:{count}</span>
-              ))}
+              <span className="text-muted-foreground/40">·</span>
+              <div className="flex items-center gap-1 flex-wrap">
+                {Object.entries(result.stats.byCategory).map(([cat, count]) => (
+                  <button
+                    key={cat}
+                    onClick={() => { setActiveTab("transforms"); setCategoryFilter(categoryFilter === cat ? null : cat); }}
+                    className={cn(
+                      "text-xs font-mono px-1.5 py-0.5 rounded border transition-all",
+                      categoryFilter === cat
+                        ? (CATEGORY_COLORS[cat] ?? "text-foreground bg-muted border-border") + " opacity-100"
+                        : "border-border text-muted-foreground/50 hover:text-muted-foreground hover:border-border/80"
+                    )}
+                  >
+                    {cat}:{count}
+                  </button>
+                ))}
+                {categoryFilter && (
+                  <button onClick={() => setCategoryFilter(null)} className="text-xs font-mono text-muted-foreground/40 hover:text-muted-foreground underline">clear</button>
+                )}
+              </div>
             </div>
           )}
 
           <div className="flex-1 overflow-auto">
-            {activeTab === "output" ? (
+            {/* OUTPUT TAB */}
+            {activeTab === "output" && (
               result ? (
                 <pre className="p-4 text-xs font-mono text-foreground leading-relaxed whitespace-pre-wrap">{result.transformedCode}</pre>
               ) : (
-                <div className="flex flex-col items-center justify-center h-full text-center p-8 space-y-3">
-                  <div className="w-10 h-10 rounded border border-border flex items-center justify-center">
-                    <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                      <path d="M2 9h14M9 2l7 7-7 7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-muted-foreground"/>
+                <div className="flex flex-col items-center justify-center h-full text-center p-8 space-y-4">
+                  <div className="w-12 h-12 rounded-xl border border-border flex items-center justify-center">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                      <path d="M2 10h16M10 2l8 8-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" className="text-muted-foreground"/>
                     </svg>
                   </div>
-                  <p className="text-xs font-mono text-muted-foreground">Paste, upload, or fetch from GitHub — then click Migrate</p>
+                  <div className="space-y-1">
+                    <p className="text-sm font-mono text-muted-foreground">Start typing to auto-migrate</p>
+                    <p className="text-xs font-mono text-muted-foreground/50">or press <kbd className="px-1 py-0.5 rounded border border-border bg-muted text-xs">⌘↵</kbd> to run instantly</p>
+                  </div>
                 </div>
               )
-            ) : (
+            )}
+
+            {/* DIFF TAB */}
+            {activeTab === "diff" && (
+              diff ? (
+                <div className="flex h-full">
+                  {/* Left: original */}
+                  <div className="flex-1 min-w-0 border-r border-border overflow-auto">
+                    <div className="sticky top-0 px-3 py-1.5 text-xs font-mono text-muted-foreground bg-card/80 border-b border-border flex items-center gap-2 backdrop-blur-sm">
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-400" /> web3.js v1 (before)
+                    </div>
+                    <div>
+                      {diff.left.map((line, idx) => {
+                        const lineNum = diff.left.slice(0, idx).filter((l) => l.text !== "" || l.type !== "same").length + (line.text !== "" || line.type !== "same" ? 1 : null);
+                        return <DiffLineEl key={idx} line={line} lineNum={idx + 1} />;
+                      })}
+                    </div>
+                  </div>
+                  {/* Right: migrated */}
+                  <div className="flex-1 min-w-0 overflow-auto">
+                    <div className="sticky top-0 px-3 py-1.5 text-xs font-mono text-muted-foreground bg-card/80 border-b border-border flex items-center gap-2 backdrop-blur-sm">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400" /> @solana/kit (after)
+                      {diff.right.filter((l) => l.type === "ai").length > 0 && (
+                        <span className="text-amber-400/70 ml-2">{diff.right.filter((l) => l.type === "ai").length} AI-flagged</span>
+                      )}
+                    </div>
+                    <div>
+                      {diff.right.map((line, idx) => (
+                        <DiffLineEl key={idx} line={line} lineNum={idx + 1} />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-center p-8 space-y-3">
+                  <p className="text-xs font-mono text-muted-foreground">Run a migration to see the diff</p>
+                </div>
+              )
+            )}
+
+            {/* TRANSFORMS TAB */}
+            {activeTab === "transforms" && (
               <div className="p-4 space-y-3">
-                {transforms.length === 0 ? (
+                {allTransforms.length === 0 ? (
                   <p className="text-xs font-mono text-muted-foreground">Run a migration to see transforms.</p>
                 ) : (
                   <>
                     {autoTransforms.length > 0 && (
                       <div className="space-y-2">
-                        <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider pb-1">
+                        <div className="text-xs font-mono text-muted-foreground uppercase tracking-wider pb-1 flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
                           Automated ({autoTransforms.length})
+                          {categoryFilter && <span className="text-primary/60 normal-case">filtered by: {categoryFilter}</span>}
                         </div>
                         {autoTransforms.map((t, i) => (
                           <div key={i} className="p-3 rounded border border-border bg-card space-y-2">
@@ -543,25 +664,26 @@ export function Playground() {
                     {aiTransforms.length > 0 && (
                       <div className="space-y-2 pt-2">
                         <div className="flex items-center gap-2 pb-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
                           <div className="text-xs font-mono text-amber-400/70 uppercase tracking-wider">AI Required ({aiTransforms.length})</div>
                           <div className="text-xs font-mono text-muted-foreground/50">— structural rewrites need manual review</div>
                         </div>
                         {aiTransforms.map((t, i) => (
                           <div key={i} className="p-3 rounded border border-amber-400/20 bg-amber-400/5 space-y-2">
                             <div className="flex items-center gap-2">
-                              <span className={cn("text-xs font-mono px-1.5 py-0.5 rounded border", CATEGORY_COLORS[t.category] ?? "")}>
+                              <span className={cn("text-xs font-mono px-1.5 py-0.5 rounded border inline-block", CATEGORY_COLORS[t.category] ?? "text-foreground bg-muted border-border")}>
                                 {t.category}
                               </span>
-                              <span className="text-xs font-mono text-amber-400 border border-amber-400/30 px-1.5 py-0.5 rounded">AI Required</span>
+                              <span className="text-xs font-mono text-amber-400 px-1.5 py-0.5 rounded border border-amber-400/20 bg-amber-400/10">AI Required</span>
                             </div>
                             <div className="grid grid-cols-2 gap-2">
                               <div>
-                                <div className="text-xs text-muted-foreground font-mono mb-1">detected</div>
-                                <pre className="text-xs font-mono text-amber-400/70 whitespace-pre-wrap break-all leading-relaxed">{t.original}</pre>
+                                <div className="text-xs text-muted-foreground font-mono mb-1">before</div>
+                                <pre className="text-xs font-mono text-red-400/60 whitespace-pre-wrap break-all leading-relaxed">{t.original}</pre>
                               </div>
                               <div>
                                 <div className="text-xs text-muted-foreground font-mono mb-1">guidance</div>
-                                <pre className="text-xs font-mono text-amber-400/80 whitespace-pre-wrap break-all leading-relaxed">{t.transformed}</pre>
+                                <pre className="text-xs font-mono text-amber-400/70 whitespace-pre-wrap break-all leading-relaxed">{t.transformed.replace(/\/\*\s*TODO:\s*AI_REQUIRED\s*—\s*/g, "").replace(/\s*\*\//g, "")}</pre>
                               </div>
                             </div>
                           </div>

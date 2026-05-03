@@ -73,12 +73,70 @@ export function Home() {
             { label: "measured coverage", value: `${AGGREGATE.coveragePercent}%`, color: "text-primary", sub: "across 5 real repos" },
             { label: "total transforms", value: AGGREGATE.totalChanges.toLocaleString(), color: "text-green-400", sub: `${AGGREGATE.filesWithWeb3} files migrated` },
             { label: "repos tested", value: `${AGGREGATE.reposTested}`, color: "text-cyan-400", sub: "production codebases" },
-            { label: "AI flagged", value: AGGREGATE.aiRequiredChanges.toLocaleString(), color: "text-amber-400", sub: "of 3,756 total" },
+            { label: "AI flagged", value: AGGREGATE.aiRequiredChanges.toLocaleString(), color: "text-amber-400", sub: `of ${AGGREGATE.totalChanges.toLocaleString()} total` },
           ].map((stat) => (
             <div key={stat.label} className="p-4 rounded border border-border bg-card space-y-1">
               <div className={cn("text-3xl font-bold font-mono", stat.color)}>{stat.value}</div>
               <div className="text-xs text-muted-foreground font-mono">{stat.label}</div>
               <div className="text-xs text-muted-foreground/60 font-mono">{stat.sub}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section className="space-y-8">
+        <h2 className="text-xl font-bold font-mono">How it works</h2>
+        <div className="grid md:grid-cols-3 gap-6">
+          {[
+            {
+              step: "01",
+              title: "Load your code",
+              description: "Paste directly, drag & drop a .ts/.js file, or fetch any GitHub file by URL. The playground loads and auto-migrates in one click.",
+              color: "text-primary border-primary/20 bg-primary/5",
+              numColor: "text-primary/40",
+            },
+            {
+              step: "02",
+              title: "98% automated instantly",
+              description: "The codemod engine handles imports, Connection → RPC, Keypair, PublicKey, Buffer, lamports, and common transaction patterns — all in your browser, zero upload.",
+              color: "text-green-400 border-green-400/20 bg-green-400/5",
+              numColor: "text-green-400/40",
+            },
+            {
+              step: "03",
+              title: "Review the diff",
+              description: "The built-in diff view shows exactly what changed, line by line. The 2% that needs AI gets precise /* TODO: AI_REQUIRED */ comments with the exact target API.",
+              color: "text-cyan-400 border-cyan-400/20 bg-cyan-400/5",
+              numColor: "text-cyan-400/40",
+            },
+          ].map((item) => (
+            <div key={item.step} className={cn("p-6 rounded border space-y-3", item.color)}>
+              <div className={cn("text-4xl font-bold font-mono", item.numColor)}>{item.step}</div>
+              <div className="text-base font-bold font-mono">{item.title}</div>
+              <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Quick feature list */}
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { label: "Real-time migration", desc: "Output updates as you type (600ms debounce)" },
+            { label: "Side-by-side diff", desc: "GitHub-style before/after line comparison" },
+            { label: "Cmd+Enter shortcut", desc: "Run migration instantly from keyboard" },
+            { label: "GitHub URL fetch", desc: "Paste any /blob/ link to load & migrate directly" },
+            { label: "File upload / drag-drop", desc: ".ts, .tsx, .js, .jsx, .mjs supported" },
+            { label: "Shareable links", desc: "Share playground state via URL hash" },
+            { label: "Download migrated file", desc: "Export as migrated-{filename}.ts" },
+            { label: "27 connection methods", desc: "Every RPC call pattern auto-transformed" },
+          ].map((f) => (
+            <div key={f.label} className="p-3 rounded border border-border bg-card space-y-0.5">
+              <div className="text-xs font-mono font-medium text-foreground flex items-center gap-1.5">
+                <span className="w-1 h-1 rounded-full bg-primary shrink-0" />
+                {f.label}
+              </div>
+              <p className="text-xs text-muted-foreground font-mono pl-2.5">{f.desc}</p>
             </div>
           ))}
         </div>
