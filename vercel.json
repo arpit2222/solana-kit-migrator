@@ -1,8 +1,7 @@
 {
   "framework": "vite",
-  "rootDirectory": "artifacts/solana-migrator",
-  "buildCommand": "pnpm run build",
-  "outputDirectory": "dist",
+  "buildCommand": "cd artifacts/solana-migrator && pnpm run build",
+  "outputDirectory": "artifacts/solana-migrator/dist",
   "installCommand": "pnpm install --frozen-lockfile --recursive",
   "buildEnv": {
     "NODE_ENV": "production",
