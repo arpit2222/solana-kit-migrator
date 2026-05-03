@@ -184,7 +184,7 @@ function buildLineDiff(before: string, after: string): { left: DiffLine[]; right
   if (a.length > 500 || b.length > 500) {
     return {
       left: a.map((t) => ({ type: "same" as const, text: t })),
-      right: b.map((t) => ({ type: (t.includes("TODO:") ? "ai" : "same") as const, text: t })),
+      right: b.map((t) => ({ type: (t.includes("TODO:") ? "ai" : "same") as DiffLine["type"], text: t })),
     };
   }
 
@@ -680,7 +680,7 @@ export function Playground() {
                     </div>
                     <div>
                       {diff.left.map((line, idx) => {
-                        const lineNum = diff.left.slice(0, idx).filter((l) => l.text !== "" || l.type !== "same").length + (line.text !== "" || line.type !== "same" ? 1 : null);
+                        const lineNum = diff.left.slice(0, idx).filter((l) => l.text !== "" || l.type !== "same").length + (line.text !== "" || line.type !== "same" ? 1 : 0);
                         return <DiffLineEl key={idx} line={line} lineNum={idx + 1} />;
                       })}
                     </div>
