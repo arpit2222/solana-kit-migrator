@@ -62,17 +62,17 @@ export function Home() {
           </Link>
           <div className="flex items-center gap-2 px-4 py-2.5 rounded border border-border bg-card font-mono text-sm text-muted-foreground">
             <span className="text-primary">$</span>
-            <span>npx @codemod/cli run solana-web3js-to-kit</span>
-            <CopyButton text="npx @codemod/cli run solana-web3js-to-kit" />
+            <span>npx @codemod/cli run @arpit2222/solana-web3js-to-kit</span>
+            <CopyButton text="npx @codemod/cli run @arpit2222/solana-web3js-to-kit" />
           </div>
         </div>
 
-        {/* Stats — real numbers from testing */}
+        {/* Stats — bundled sample corpus */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-4">
           {[
-            { label: "measured coverage", value: `${AGGREGATE.coveragePercent}%`, color: "text-primary", sub: "across 5 real repos" },
-            { label: "total transforms", value: AGGREGATE.totalChanges.toLocaleString(), color: "text-green-400", sub: `${AGGREGATE.filesWithWeb3} files migrated` },
-            { label: "repos tested", value: `${AGGREGATE.reposTested}`, color: "text-cyan-400", sub: "production codebases" },
+            { label: "fixture coverage", value: `${AGGREGATE.coveragePercent}%`, color: "text-primary", sub: "sample corpus" },
+            { label: "total transforms", value: AGGREGATE.totalChanges.toLocaleString(), color: "text-green-400", sub: `${AGGREGATE.filesWithWeb3} files touched` },
+            { label: "sample repos", value: `${AGGREGATE.reposTested}`, color: "text-cyan-400", sub: "bundled validation set" },
             { label: "AI flagged", value: AGGREGATE.aiRequiredChanges.toLocaleString(), color: "text-amber-400", sub: `of ${AGGREGATE.totalChanges.toLocaleString()} total` },
           ].map((stat) => (
             <div key={stat.label} className="p-4 rounded border border-border bg-card space-y-1">
@@ -98,15 +98,15 @@ export function Home() {
             },
             {
               step: "02",
-              title: "98% automated instantly",
-              description: "The codemod engine handles imports, Connection → RPC, Keypair, PublicKey, Buffer, lamports, and common transaction patterns — all in your browser, zero upload.",
+              title: "Bulk migration automated",
+              description: "Deterministic transforms handle imports, Connection → RPC, Keypair, PublicKey, Buffer, lamports, and common transaction patterns — all in your browser, with no server dependency.",
               color: "text-green-400 border-green-400/20 bg-green-400/5",
               numColor: "text-green-400/40",
             },
             {
               step: "03",
               title: "Review the diff",
-              description: "The built-in diff view shows exactly what changed, line by line. The 2% that needs AI gets precise /* TODO: AI_REQUIRED */ comments with the exact target API.",
+              description: "The built-in diff view shows exactly what changed, line by line. Hard cases get precise /* TODO: AI_REQUIRED */ comments with the exact target API.",
               color: "text-cyan-400 border-cyan-400/20 bg-cyan-400/5",
               numColor: "text-cyan-400/40",
             },
@@ -146,14 +146,14 @@ export function Home() {
       <section className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
-            <h2 className="text-xl font-bold font-mono">Tested on real production repos</h2>
+            <h2 className="text-xl font-bold font-mono">Validation corpus</h2>
             <p className="text-xs font-mono text-muted-foreground">
-              Numbers measured by running the codemod against actual cloned repositories — not estimates.
+              Numbers reflect the bundled sample validation set and fixture-backed test harness.
             </p>
           </div>
           <div className="text-right">
             <div className="text-2xl font-bold font-mono text-primary">{AGGREGATE.coveragePercent}%</div>
-            <div className="text-xs font-mono text-muted-foreground">aggregate</div>
+            <div className="text-xs font-mono text-muted-foreground">sample aggregate</div>
           </div>
         </div>
 
@@ -327,7 +327,7 @@ export function Home() {
       <section className="p-8 rounded border border-primary/20 bg-primary/5 text-center space-y-4">
         <h2 className="text-2xl font-bold font-mono">Ready to migrate?</h2>
         <p className="text-muted-foreground font-mono text-sm max-w-lg mx-auto">
-          {AGGREGATE.coveragePercent}% automated across {AGGREGATE.totalChanges.toLocaleString()} real-world transforms.
+          {AGGREGATE.coveragePercent}% automated across {AGGREGATE.totalChanges.toLocaleString()} sample transforms.
           Complex transaction patterns are flagged with clear AI review comments.
         </p>
         <Link

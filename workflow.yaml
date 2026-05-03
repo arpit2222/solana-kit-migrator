@@ -1,0 +1,16 @@
+version: "1"
+nodes:
+  - id: migrate-web3-to-kit
+    name: Migrate @solana/web3.js to @solana/kit
+    type: automatic
+    steps:
+      - name: Run migration codemod
+        js-ast-grep:
+          js_file: "scripts/codemod.ts"
+          language: "typescript"
+          include:
+            - "**/*.ts"
+            - "**/*.tsx"
+            - "**/*.js"
+            - "**/*.jsx"
+            - "**/*.mjs"

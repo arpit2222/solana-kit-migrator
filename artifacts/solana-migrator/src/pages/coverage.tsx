@@ -52,7 +52,7 @@ export function Coverage() {
           <div className="space-y-2">
             <h1 className="text-4xl font-bold font-mono">Coverage breakdown</h1>
             <p className="text-muted-foreground font-mono text-sm max-w-2xl leading-relaxed">
-              Honest coverage numbers by migration category, measured against 5 production repositories.
+              Coverage numbers by migration category, measured against the bundled sample repositories.
               Patterns are flagged for AI when a structural rewrite is needed — not pretended away.
             </p>
           </div>
@@ -216,7 +216,7 @@ export function Coverage() {
       <div className="p-6 rounded border border-border bg-card/50 space-y-3">
         <h2 className="text-base font-bold font-mono">Methodology</h2>
         <div className="space-y-2 text-sm text-muted-foreground font-mono leading-relaxed">
-          <p>Coverage percentages reflect the share of real-world patterns observed across {REPOS_TESTED.length} production repositories that are handled deterministically by the codemod engine.</p>
+          <p>Coverage percentages reflect the share of patterns observed across {REPOS_TESTED.length} bundled sample repositories that are handled deterministically by the codemod engine.</p>
           <p>
             <span className="text-amber-400">Transaction building</span> is partially AI-assisted — the new @solana/kit transaction model is an architectural change, not a find-replace.
             Chained <code className="bg-muted px-1 rounded">new Transaction().add()</code> calls require understanding each instruction argument.

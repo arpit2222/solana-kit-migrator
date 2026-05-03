@@ -1,0 +1,22 @@
+schema_version: "1.0"
+name: "@arpit2222/solana-web3js-to-kit"
+version: "1.0.0"
+description: "Migrate @solana/web3.js v1 to @solana/kit with deterministic codemods and explicit AI handoff"
+author: "arpit kumar chauhan <arpitchauhan2468@gmail.com>"
+license: "MIT"
+repository: "https://github.com/arpit2222/solana-kit-migrator"
+workflow: "workflow.yaml"
+category: "migration"
+targets:
+  languages:
+    - "typescript"
+    - "javascript"
+keywords:
+  - "upgrade"
+  - "cross-migration"
+  - "solana"
+  - "web3js"
+  - "kit"
+registry:
+  access: "public"
+  visibility: "public"

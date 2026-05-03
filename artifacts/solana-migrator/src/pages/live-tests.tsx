@@ -89,7 +89,7 @@ export function LiveTests() {
     await delay(80);
     pushLog(mkLog(`[${ts()}] Initializing live test runner...`, "dim"));
     await delay(120);
-    pushLog(mkLog(`[${ts()}] Test suite: ${LIVE_TEST_FILES.length} real production repositories`, "dim"));
+    pushLog(mkLog(`[${ts()}] Test suite: ${LIVE_TEST_FILES.length} sample repositories`, "dim"));
     await delay(80);
     pushLog(mkLog(`[${ts()}] Fetching files from GitHub via raw.githubusercontent.com`, "dim"));
     await delay(100);
@@ -325,7 +325,7 @@ export function LiveTests() {
           </div>
           <p className="text-xs font-mono text-muted-foreground/60">
             Results may vary based on network access and repository state. Core migration statistics
-            are validated against our full 5-repo test suite (372 files, 4,362 transforms).
+            are validated against the bundled sample suite and fixture-backed migration harness.
           </p>
         </div>
       )}

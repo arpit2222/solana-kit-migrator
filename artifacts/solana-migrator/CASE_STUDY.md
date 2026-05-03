@@ -9,14 +9,14 @@
 
 `solana-kit-migrator` is a fully browser-based codemod tool that automatically migrates Solana
 TypeScript projects from the legacy `@solana/web3.js` v1 API to the new `@solana/kit` split-package
-architecture. No install required — paste code, get migrated output, copy AI prompt for the rest.
+architecture. No install required — paste code, get migrated output, copy the AI prompt for the rest.
 
-**Live demo:** https://your-deployed-url.replit.app
-**Source:** https://github.com/your-username/solana-kit-migrator
+**Live demo:** [DEPLOYED_DEMO_URL]
+**Source:** [GITHUB_REPOSITORY_URL]
 
 ---
 
-## Aggregate Results (5 Real Production Repos)
+## Sample Validation Snapshot
 
 | Metric | Value |
 |---|---|
@@ -24,24 +24,48 @@ architecture. No install required — paste code, get migrated output, copy AI p
 | Total files scanned | 372 |
 | Files containing web3.js v1 | 89 |
 | Total transforms applied | 4,362 |
-| Automated (no human needed) | 4,273 (98%) |
-| AI-flagged (structural rewrite needed) | 89 (2%) |
+| Automated bulk transforms | 4,273 |
+| AI-flagged structural rewrites | 89 |
+
+---
+
+## Real Repo Benchmark
+
+The codemod harness was run against two public repository clones:
+
+| Repository | Files Scanned | Files with `@solana/web3.js` | Total Transforms | Automated | AI Required | Coverage |
+|---|---|---:|---:|---:|---:|---:|
+| `solana-labs/example-helloworld` | 3 | 2 | 34 | 31 | 3 | 91% |
+| `solana-developers/program-examples` | 340 | 146 | 2,458 | 2,420 | 38 | 98% |
+| **Aggregate** | **343** | **148** | **2,492** | **2,451** | **41** | **98%** |
+
+Key transformed categories:
+
+- imports
+- connection
+- keypair
+- publickey
+- transaction
+- buffer
+- lamports
+
+This is the clearest proof point for the submission because it shows the codemod running on real public repo clones, not only on fixtures or internal sample data.
 
 ---
 
 ## Coverage Breakdown by Category
 
-| Category | Patterns Covered | Auto % | Notes |
-|---|---|---|---|
-| **imports** | Named import rewriting, namespace forms (`web3.X`) | 100% | All 40+ mapped symbols auto-migrated |
-| **connection** | 27 Connection methods (.getBalance, .getSlot, .getLatestBlockhash, etc.) | 100% | Adds `.send()` call chain |
-| **keypair** | generate, fromSecretKey, fromSeed, publicKey access | 95% | `.publicKey` → `.address` auto-migrated |
-| **publickey** | new PublicKey(), findProgramAddress, findProgramAddressSync, toBase58, toBuffer | 90% | PDA derivation flagged for structural review |
-| **transaction** | new Transaction(), tx.add(), tx.feePayer, tx.recentBlockhash | 85% | Full build pattern (pipe/createTransactionMessage) flagged for AI |
-| **buffer** | bs58 encode/decode, Buffer.from patterns, toBytes/toBuffer | 100% | Mapped to @solana/codecs equivalents |
-| **lamports** | LAMPORTS_PER_SOL usage, SOL ↔ lamports arithmetic | 100% | Direct constant mapping |
-| **sysvars** | SYSVAR_RENT_PUBKEY, SYSVAR_CLOCK_PUBKEY, etc. | 100% | Renamed to _ADDRESS variants |
-| **programs** | SystemProgram.transfer, SystemProgram.createAccount | 80% | Mapped to @solana/programs |
+| Category | Patterns Covered | Notes |
+|---|---|---|
+| **imports** | Named import rewriting, namespace forms (`web3.X`) | All mapped symbols auto-migrated |
+| **connection** | 27 Connection methods (.getBalance, .getSlot, .getLatestBlockhash, etc.) | Adds `.send()` call chain |
+| **keypair** | generate, fromSecretKey, fromSeed, publicKey access | `.publicKey` → `.address` auto-migrated |
+| **publickey** | new PublicKey(), findProgramAddress, findProgramAddressSync, toBase58, toBuffer | PDA derivation flagged for structural review |
+| **transaction** | new Transaction(), tx.add(), tx.feePayer, tx.recentBlockhash | Full build pattern flagged for AI |
+| **buffer** | bs58 encode/decode, Buffer.from patterns, toBytes/toBuffer | Mapped to @solana/codecs equivalents |
+| **lamports** | LAMPORTS_PER_SOL usage, SOL ↔ lamports arithmetic | Direct constant mapping |
+| **sysvars** | SYSVAR_RENT_PUBKEY, SYSVAR_CLOCK_PUBKEY, etc. | Renamed to _ADDRESS variants |
+| **programs** | SystemProgram.transfer, SystemProgram.createAccount | Mapped to @solana/programs |
 
 ---
 
@@ -92,7 +116,7 @@ const tx = new Transaction().add(
 const sig = await sendAndConfirmTransaction(connection, tx, [payer]);
 ```
 
-### After (migrated — 98% automated)
+### After (migrated — high automation with explicit AI handoff)
 
 ```typescript
 import { createSolanaRpc } from "@solana/rpc";
@@ -205,9 +229,9 @@ Your codebase (web3.js v1)
         │
         ▼
   solana-kit-migrator
-  [98% automated — regex engine]
+  [high-automation codemod engine]
         │
-        ├─ AUTO transforms ──────────────────► Output (98% migrated)
+        ├─ AUTO transforms ──────────────────► Output (mostly migrated)
         │
         └─ AI-flagged patterns ──────────────► TODO: AI_REQUIRED comments
                                                + "Copy AI Prompt" button
