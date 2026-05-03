@@ -96,6 +96,63 @@ function downloadFile(content: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+function generateAIPrompt(migratedCode: string, stats: { automaticChanges: number; aiRequiredChanges: number; totalChanges: number; coveragePercent: number }): string {
+  return `You are helping migrate Solana code from @solana/web3.js v1 to @solana/kit.
+
+The automated codemod (solana-kit-migrator) has already handled ${stats.automaticChanges} of ${stats.totalChanges} patterns automatically (${stats.coveragePercent}% coverage). ${stats.aiRequiredChanges} pattern${stats.aiRequiredChanges === 1 ? "" : "s"} need${stats.aiRequiredChanges === 1 ? "s" : ""} structural rewrites — they are marked with /* TODO: AI_REQUIRED */ in the code below.
+
+PARTIALLY MIGRATED CODE:
+\`\`\`typescript
+${migratedCode}
+\`\`\`
+
+Please fix all /* TODO: AI_REQUIRED */ comments using the correct @solana/kit APIs:
+
+**Transaction building (pipe-based functional pattern):**
+\`\`\`typescript
+import { pipe } from "@solana/functional";
+import { createTransactionMessage, appendTransactionMessageInstructions, setTransactionMessageFeePayerSigner, setTransactionMessageLifetimeUsingBlockhash } from "@solana/transaction-messages";
+
+const tx = pipe(
+  createTransactionMessage({ version: 0 }),
+  (tx) => setTransactionMessageFeePayerSigner(payerSigner, tx),
+  (tx) => setTransactionMessageLifetimeUsingBlockhash({ blockhash, lastValidBlockHeight }, tx),
+  (tx) => appendTransactionMessageInstructions([instruction1, instruction2], tx),
+);
+\`\`\`
+
+**Sending & confirming transactions:**
+\`\`\`typescript
+import { sendAndConfirmTransactionFactory } from "@solana/transaction-confirmation";
+const sendAndConfirm = sendAndConfirmTransactionFactory({ rpc });
+const signature = await sendAndConfirm(tx, { commitment: "confirmed" });
+\`\`\`
+
+**Sending raw transactions:**
+\`\`\`typescript
+import { getBase64EncodedWireTransaction } from "@solana/transactions";
+import { sendTransactionFactory } from "@solana/rpc";
+const sendTx = sendTransactionFactory({ rpc });
+const encoded = getBase64EncodedWireTransaction(compiledTx);
+const sig = await sendTx(encoded, { commitment: "confirmed" });
+\`\`\`
+
+**Confirming by signature:**
+\`\`\`typescript
+const { value: statuses } = await rpc.getSignatureStatuses([signature]).send();
+const confirmed = statuses[0]?.confirmationStatus === "confirmed";
+\`\`\`
+
+**Durable nonces:**
+\`\`\`typescript
+import { setTransactionMessageLifetimeUsingDurableNonce } from "@solana/transaction-messages";
+const { value: nonceAccount } = await rpc.getAccountInfo(nonceAddress, { encoding: "base64" }).send();
+const tx = pipe(msg, (tx) => setTransactionMessageLifetimeUsingDurableNonce({ nonce, nonceAccountAddress, nonceAuthorityAddress }, tx));
+\`\`\`
+
+Return only the corrected code with all /* TODO: AI_REQUIRED */ sections replaced by working @solana/kit code. Do not include explanation outside the code block.`;
+}
+
 function encodeShare(code: string): string { try { return btoa(encodeURIComponent(code)); } catch { return ""; } }
 function decodeShare(encoded: string): string { try { return decodeURIComponent(atob(encoded)); } catch { return ""; } }
 
@@ -527,6 +584,12 @@ export function Playground() {
             </div>
             {result && (
               <div className="pr-3 flex items-center gap-1.5">
+                {result.stats.aiRequiredChanges > 0 && (
+                  <CopyButton
+                    text={generateAIPrompt(result.transformedCode, result.stats)}
+                    label="copy AI prompt"
+                  />
+                )}
                 <CopyButton text={result.transformedCode} label="copy output" />
                 <button
                   onClick={() => downloadFile(result.transformedCode, fetchedFilename ? `migrated-${fetchedFilename}` : "migrated.ts")}
