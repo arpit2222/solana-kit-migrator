@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { cn } from "@/lib/utils";
 import { migrateCode, type TransformDetail } from "@/lib/migrator";
+import { checkTypeScript, type TsCheckResult } from "@/lib/ts-check";
 
 const CATEGORY_COLORS: Record<string, string> = {
   imports: "text-blue-400 bg-blue-400/10 border-blue-400/20",
@@ -261,8 +262,9 @@ function DiffLineEl({ line, lineNum }: { line: DiffLine; lineNum: number | null 
   );
 }
 
-type TabId = "output" | "diff" | "transforms";
+type TabId = "output" | "diff" | "transforms" | "compile";
 type FetchState = "idle" | "loading" | "error";
+type CompileState = TsCheckResult | "loading" | null;
 
 const GITHUB_EXAMPLES = [
   { label: "example-helloworld/hello_world.ts", url: "https://github.com/solana-labs/example-helloworld/blob/master/src/client/hello_world.ts" },
@@ -292,6 +294,7 @@ export function Playground() {
   const [code, setCode] = useState(getInitialCode);
   const [result, setResult] = useState<ReturnType<typeof migrateCode> | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("output");
+  const [compileState, setCompileState] = useState<CompileState>(null);
 
   // Auto-migrate on load if hash present
   useEffect(() => {
@@ -410,6 +413,15 @@ export function Playground() {
 
   // Count changes by category
   const changedLineCount = diff ? diff.right.filter((l) => l.type !== "same").length : 0;
+
+  // Run TypeScript compiler check when compile tab becomes active
+  useEffect(() => {
+    if (activeTab !== "compile" || !result) return;
+    setCompileState("loading");
+    checkTypeScript(result.transformedCode)
+      .then((r) => setCompileState(r))
+      .catch(() => setCompileState({ valid: false, errors: ["Compiler unavailable in this environment"], js: "" }));
+  }, [activeTab, result]);
 
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col">
@@ -565,7 +577,7 @@ export function Playground() {
           {/* Tab bar */}
           <div className="border-b border-border flex items-center justify-between bg-card/50 shrink-0 px-0">
             <div className="flex">
-              {(["output", "diff", "transforms"] as TabId[]).map((tab) => (
+              {(["output", "diff", "transforms", "compile"] as TabId[]).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -578,6 +590,10 @@ export function Playground() {
                     ? `transforms${allTransforms.length > 0 ? ` (${allTransforms.length})` : ""}`
                     : tab === "diff"
                     ? `diff${changedLineCount > 0 ? ` (${changedLineCount})` : ""}`
+                    : tab === "compile"
+                    ? compileState && compileState !== "loading"
+                      ? compileState.valid ? "compile ✓" : `compile ✗`
+                      : "compile"
                     : "@solana/kit output"}
                 </button>
               ))}
@@ -689,6 +705,71 @@ export function Playground() {
                   <p className="text-xs font-mono text-muted-foreground">Run a migration to see the diff</p>
                 </div>
               )
+            )}
+
+            {/* COMPILE TAB */}
+            {activeTab === "compile" && (
+              <div className="flex-1 overflow-auto p-5 font-mono text-xs space-y-5">
+                {!result ? (
+                  <div className="text-muted-foreground">Migrate code first to check TypeScript compilation.</div>
+                ) : compileState === "loading" ? (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <svg className="animate-spin shrink-0" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="31.4" strokeDashoffset="10"/>
+                    </svg>
+                    Loading TypeScript compiler…
+                  </div>
+                ) : compileState === null ? null : compileState.valid ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2.5 text-green-400">
+                      <div className="w-5 h-5 rounded-full bg-green-400/15 border border-green-400/30 flex items-center justify-center shrink-0">
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                          <path d="M2 5l2 2 4-4" stroke="#4ade80" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                        </svg>
+                      </div>
+                      <span className="font-semibold">TypeScript transpiles successfully</span>
+                    </div>
+                    <div className="pl-7 text-muted-foreground/60 space-y-1">
+                      <div>✓ Valid TypeScript syntax — no parse or transpile errors</div>
+                      <div>✓ All import statements are structurally correct</div>
+                      <div>✓ Type annotations and generics are well-formed</div>
+                      <div className="pt-1 text-muted-foreground/40">
+                        Note: Full type resolution requires <code className="text-primary/70">@solana/kit</code> packages installed locally.
+                        This check validates syntax and transpilability — the guarantee that matters most for automated migration.
+                      </div>
+                    </div>
+                    {compileState.js && (
+                      <details className="group mt-2">
+                        <summary className="cursor-pointer text-muted-foreground hover:text-foreground select-none list-none flex items-center gap-1.5">
+                          <svg className="transition-transform group-open:rotate-90" width="10" height="10" viewBox="0 0 10 10" fill="none">
+                            <path d="M3 2l4 3-4 3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                          </svg>
+                          View transpiled JavaScript output
+                        </summary>
+                        <pre className="mt-3 p-3 rounded border border-border bg-card text-green-400/70 overflow-auto max-h-96 text-xs leading-relaxed whitespace-pre-wrap">
+                          {compileState.js}
+                        </pre>
+                      </details>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2.5 text-red-400">
+                      <div className="w-5 h-5 rounded-full bg-red-400/15 border border-red-400/30 flex items-center justify-center shrink-0">
+                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                          <path d="M3 3l4 4M7 3l-4 4" stroke="#f87171" strokeWidth="1.5" strokeLinecap="round"/>
+                        </svg>
+                      </div>
+                      <span className="font-semibold">{compileState.errors.length} syntax error{compileState.errors.length !== 1 ? "s" : ""} detected</span>
+                    </div>
+                    <div className="pl-7 space-y-2">
+                      {compileState.errors.map((err, i) => (
+                        <div key={i} className="text-red-400/80 bg-red-400/5 border border-red-400/15 rounded px-3 py-2">{err}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
 
             {/* TRANSFORMS TAB */}

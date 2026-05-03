@@ -169,9 +169,6 @@ importers:
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
-      '@workspace/db':
-        specifier: workspace:*
-        version: link:../../lib/db
       cookie-parser:
         specifier: ^1.4.7
         version: 1.4.7
@@ -400,6 +397,10 @@ importers:
         version: 3.25.76
 
   artifacts/solana-migrator:
+    dependencies:
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
     devDependencies:
       '@hookform/resolvers':
         specifier: ^3.10.0

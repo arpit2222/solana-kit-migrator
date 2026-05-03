@@ -5,6 +5,7 @@ const navItems = [
   { href: "/", label: "Home" },
   { href: "/playground", label: "Playground" },
   { href: "/coverage", label: "Coverage" },
+  { href: "/live-tests", label: "Live Tests" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
