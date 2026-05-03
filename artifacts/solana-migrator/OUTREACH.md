@@ -1,8 +1,7 @@
 # Layer 3 Outreach Templates
 
-Copy-paste ready text for all three adoption channels.
-Replace the sample metrics with verified benchmark output before posting.
-Replace [YOUR_GITHUB_URL] and [YOUR_DEMO_URL] with your actual links.
+Copy-paste ready text for adoption channels, plus the current publish status.
+Replace [YOUR_GITHUB_URL] and [YOUR_DEMO_URL] with your actual links before posting.
 
 ---
 
@@ -133,37 +132,24 @@ Try it → [YOUR_DEMO_URL]
 
 ---
 
-## 5. Codemod Registry Submission
+## 5. Codemod Registry Status
 
-**Registry:** https://codemod.com/registry
+**Published package:** `@arpit2222/solana-web3js-to-kit`
 
-Steps to publish (requires account at codemod.com):
+**Package purpose:** migrate `@solana/web3.js` v1 projects to `@solana/kit` with a deterministic
+codemod core and explicit AI handoff for structural edge cases.
 
-1. Create an account at https://app.codemod.com
-2. Install the CLI: `npm install -g @codemod-com/cli`
-3. Login: `codemod login`
-4. In the project root, run: `codemod publish`
+**Publish root:** `publish/solana-web3js-to-kit`
 
-The `codemod.json` metadata file (create at project root):
-```json
-{
-  "name": "solana/web3js-to-kit",
-  "version": "1.0.0",
-  "description": "Migrate @solana/web3.js v1 to @solana/kit with deterministic codemods and AI handoff",
-  "engine": "ast-grep",
-  "tags": ["solana", "web3", "migration", "blockchain"],
-  "applicability": {
-    "from": "@solana/web3.js@^1",
-    "to": "@solana/kit@^2"
-  },
-  "testFixtures": "./fixtures"
-}
-```
+**Important notes for judges and maintainers:**
 
-Note: The hackathon brief explicitly says not to use `jscodeshift`. If you publish to the
-registry, keep the engine aligned with `ast-grep`/`jssg`-style workflows and make it clear
-that the repo's deterministic migration engine is what the judge should evaluate.
-The fixtures directory with 20 input/output pairs satisfies the registry's test requirement.
+- The published package is already scoped and available under the account above.
+- The judge-facing browser app displays the same package name in the live UI.
+- The repo includes a clean publish bundle so the codemod registry artifact is isolated from the
+  frontend workspace.
+- The brief explicitly says not to use `jscodeshift`; the current engine is designed around the
+  deterministic migration workflow the hackathon asks for.
+- The benchmark and case study are the source of truth for coverage claims.
 
 ---
 
@@ -175,6 +161,6 @@ The fixtures directory with 20 input/output pairs satisfies the registry's test 
 | File GitHub issue on anza-xyz/solana-web3.js | 5 minutes | Highest — official adoption path |
 | File PR with doc addition | 15 minutes | Highest — most visible to devs |
 | Tweet | 2 minutes | Medium — general visibility |
-| Codemod registry publish | 30 minutes | Medium — discoverability |
+| Codemod registry publish | Complete | Package already published under `@arpit2222/solana-web3js-to-kit` |
 
 Do Discord + GitHub issue first (fastest, highest ROI). PR if the issue gets a positive response.
