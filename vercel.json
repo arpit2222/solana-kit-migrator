@@ -1,6 +1,7 @@
 {
   "framework": "vite",
   "buildCommand": "pnpm --filter @workspace/solana-migrator build",
+  "outputDirectory": "artifacts/solana-migrator/dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "rewrites": [
     {
