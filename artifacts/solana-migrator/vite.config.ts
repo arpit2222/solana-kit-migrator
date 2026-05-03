@@ -22,6 +22,7 @@ export default defineConfig({
   build: {
     outDir: "dist",
     emptyOutDir: true,
+    sourcemap: false,
     rollupOptions: {
       input: {
         main: path.resolve(import.meta.dirname, "index.html")
