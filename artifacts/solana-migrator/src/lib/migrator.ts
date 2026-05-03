@@ -90,6 +90,37 @@ interface Transform {
 }
 
 const TRANSFORMS: Transform[] = [
+  // ── Web3 namespace forms (import * as web3) — must come before generic patterns
+  {
+    category: "connection",
+    pattern: /new\s+web3\.Connection\s*\(\s*([^)]+)\s*\)/g,
+    replacement: (m) => `createSolanaRpc(${m[1].trim()})`,
+  },
+  {
+    category: "keypair",
+    pattern: /web3\.Keypair\.generate\s*\(\s*\)/g,
+    replacement: "await generateKeyPairSigner()",
+  },
+  {
+    category: "keypair",
+    pattern: /web3\.Keypair\.fromSecretKey\s*\(\s*([^)]+)\s*\)/g,
+    replacement: (m) => `await createKeyPairSignerFromBytes(${m[1].trim()})`,
+  },
+  {
+    category: "publickey",
+    pattern: /new\s+web3\.PublicKey\s*\(\s*([^)]+)\s*\)/g,
+    replacement: (m) => `address(${m[1].trim()})`,
+  },
+  {
+    category: "publickey",
+    pattern: /web3\.PublicKey\.findProgramAddressSync\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g,
+    replacement: (m) => `getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })`,
+  },
+  {
+    category: "publickey",
+    pattern: /web3\.PublicKey\.findProgramAddress\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g,
+    replacement: (m) => `getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })`,
+  },
   // ── A. Connection → RPC ────────────────────────────────────────────────────
   {
     category: "connection",
@@ -98,64 +129,64 @@ const TRANSFORMS: Transform[] = [
   },
   {
     category: "connection",
-    pattern: /(\w+)\.getBalance\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getBalance(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getBalance\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getBalance(${m[2].trim()}).send()`,
   },
   {
     category: "connection",
-    pattern: /(\w+)\.getAccountInfo\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getAccountInfo(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getAccountInfo\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getAccountInfo(${m[2].trim()}).send()`,
   },
   {
     category: "connection",
-    pattern: /(\w+)\.getTokenAccountBalance\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getTokenAccountBalance(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getTokenAccountBalance\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getTokenAccountBalance(${m[2].trim()}).send()`,
   },
   {
     category: "connection",
-    pattern: /(\w+)\.getTransaction\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getTransaction(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getTransaction\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getTransaction(${m[2].trim()}).send()`,
   },
   {
     category: "connection",
-    pattern: /(\w+)\.getSlot\s*\(\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getSlot().send()`,
+    pattern: /(\w+)\.getSlot\s*\(\s*([^)]*)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getSlot(${m[2].trim()}).send()`,
   },
   {
     category: "connection",
-    pattern: /(\w+)\.getLatestBlockhash\s*\(\s*([^)]*)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getLatestBlockhash(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getLatestBlockhash\s*\(\s*([^)]*)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getLatestBlockhash(${m[2].trim()}).send()`,
   },
   {
     category: "connection",
-    pattern: /(\w+)\.getProgramAccounts\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getProgramAccounts(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getProgramAccounts\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getProgramAccounts(${m[2].trim()}).send()`,
   },
   {
     category: "connection",
-    pattern: /(\w+)\.getTokenSupply\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getTokenSupply(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getTokenSupply\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getTokenSupply(${m[2].trim()}).send()`,
   },
   {
     category: "connection",
-    pattern: /(\w+)\.getMultipleAccountsInfo\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getMultipleAccounts(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getMultipleAccountsInfo\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getMultipleAccounts(${m[2].trim()}).send()`,
   },
   {
     category: "connection",
-    pattern: /(\w+)\.getVersion\s*\(\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getVersion().send()`,
+    pattern: /(\w+)\.getVersion\s*\(\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getVersion().send()`,
   },
   {
     category: "connection",
-    pattern: /(\w+)\.getMinimumBalanceForRentExemption\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getMinimumBalanceForRentExemption(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getMinimumBalanceForRentExemption\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getMinimumBalanceForRentExemption(${m[2].trim()}).send()`,
   },
   // getRecentBlockhash is deprecated — maps to getLatestBlockhash
   {
     category: "connection",
-    pattern: /(\w+)\.getRecentBlockhash\s*\(\s*([^)]*)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getLatestBlockhash(${m[2].trim()}).send() /* NOTE: getRecentBlockhash deprecated → getLatestBlockhash */`,
+    pattern: /(\w+)\.getRecentBlockhash\s*\(\s*([^)]*)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getLatestBlockhash(${m[2].trim()}).send() /* NOTE: getRecentBlockhash deprecated → getLatestBlockhash */`,
   },
   // confirmTransaction — single-arg form
   {
@@ -173,25 +204,25 @@ const TRANSFORMS: Transform[] = [
   },
   {
     category: "connection",
-    pattern: /(\w+)\.requestAirdrop\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.requestAirdrop(${m[2].trim()}, ${m[3].trim()}).send()`,
+    pattern: /(\w+)\.requestAirdrop\s*\(\s*([^,]+),\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.requestAirdrop(${m[2].trim()}, ${m[3].trim()}).send()`,
   },
   {
     category: "connection",
-    pattern: /clusterApiUrl\s*\(\s*(['"])(\w+)\1\s*\)/g,
+    pattern: /clusterApiUrl\s*\(\s*(['"])([\w-]+)\1\s*\)/g,
     replacement: (m) => `\`https://api.${m[2]}.solana.com\``,
   },
   // getSignatureStatuses — auto (non-confirmTransaction form)
   {
     category: "connection",
-    pattern: /(\w+)\.getSignatureStatuses\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getSignatureStatuses(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getSignatureStatuses\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getSignatureStatuses(${m[2].trim()}).send()`,
   },
   // simulateTransaction — auto
   {
     category: "connection",
-    pattern: /(\w+)\.simulateTransaction\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.simulateTransaction(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.simulateTransaction\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.simulateTransaction(${m[2].trim()}).send()`,
   },
   // sendRawTransaction — flagged (serialization API changed)
   {
@@ -203,32 +234,32 @@ const TRANSFORMS: Transform[] = [
   // getBlockTime — auto
   {
     category: "connection",
-    pattern: /(\w+)\.getBlockTime\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getBlockTime(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getBlockTime\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getBlockTime(${m[2].trim()}).send()`,
   },
   // getEpochInfo — auto
   {
     category: "connection",
-    pattern: /(\w+)\.getEpochInfo\s*\(\s*([^)]*)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getEpochInfo(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getEpochInfo\s*\(\s*([^)]*)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getEpochInfo(${m[2].trim()}).send()`,
   },
   // getRecentPerformanceSamples — auto
   {
     category: "connection",
-    pattern: /(\w+)\.getRecentPerformanceSamples\s*\(\s*([^)]*)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getRecentPerformanceSamples(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getRecentPerformanceSamples\s*\(\s*([^)]*)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getRecentPerformanceSamples(${m[2].trim()}).send()`,
   },
   // getTokenAccountsByOwner — auto
   {
     category: "connection",
-    pattern: /(\w+)\.getTokenAccountsByOwner\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getTokenAccountsByOwner(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getTokenAccountsByOwner\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getTokenAccountsByOwner(${m[2].trim()}).send()`,
   },
   // getBlocks — auto
   {
     category: "connection",
-    pattern: /(\w+)\.getBlocks\s*\(\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await ${m[1]}.getBlocks(${m[2].trim()}).send()`,
+    pattern: /(\w+)\.getBlocks\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g,
+    replacement: (m) => `${m[1]}.getBlocks(${m[2].trim()}).send()`,
   },
   // getNonce / getNonceAndContext — flagged
   {
@@ -291,12 +322,12 @@ const TRANSFORMS: Transform[] = [
   {
     category: "publickey",
     pattern: /PublicKey\.findProgramAddressSync\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })`,
+    replacement: (m) => `getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })`,
   },
   {
     category: "publickey",
     pattern: /PublicKey\.findProgramAddress\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g,
-    replacement: (m) => `await getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })`,
+    replacement: (m) => `getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })`,
   },
   {
     category: "publickey",
@@ -473,7 +504,7 @@ const TRANSFORMS: Transform[] = [
 
 function rewriteImports(code: string, transforms: TransformDetail[]): string {
   const importRegex = /import\s*\{([^}]+)\}\s*from\s*['"](@solana\/web3\.js|solana-web3\.js)['"]/g;
-  return code.replace(importRegex, (fullMatch, importList) => {
+  let result = code.replace(importRegex, (fullMatch, importList) => {
     const names = importList.split(",").map((n: string) => n.trim()).filter(Boolean);
     const pkgMap: Record<string, string[]> = {};
     for (const name of names) {
@@ -489,6 +520,14 @@ function rewriteImports(code: string, transforms: TransformDetail[]): string {
     transforms.push({ category: "imports", original: fullMatch, transformed: newImports, flaggedForAI: false });
     return newImports;
   });
+  // Handle star imports: import * as web3 from "@solana/web3.js"
+  const starRegex = /import\s*\*\s*as\s+(\w+)\s+from\s*['"]@solana\/web3\.js['"]/g;
+  result = result.replace(starRegex, (_match, alias) => {
+    const replacement = `import * as ${alias} from '@solana/kit'`;
+    transforms.push({ category: "imports", original: _match, transformed: replacement, flaggedForAI: false });
+    return replacement;
+  });
+  return result;
 }
 
 export function migrateCode(code: string): MigrateResult {

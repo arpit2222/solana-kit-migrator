@@ -1,7 +1,18 @@
+#!/usr/bin/env node
 /**
- * Test the Solana migration engine against real repos.
- * Usage: node scripts/src/test-migrator.mjs
- * Keep this in sync with artifacts/solana-migrator/src/lib/migrator.ts
+ * solana-kit-migrator CLI
+ * Migrates @solana/web3.js v1 → @solana/kit
+ *
+ * Usage:
+ *   node scripts/src/cli.mjs <path> [options]
+ *   npx solana-kit-migrator <path> [options]
+ *
+ * Options:
+ *   --write       Write migrated files in-place (default: dry-run)
+ *   --ext         Comma-separated extensions (default: .ts,.tsx,.js,.jsx,.mjs)
+ *   --summary     Print aggregate stats only (no per-transform details)
+ *   --no-color    Disable color output
+ *   --help        Show this help
  */
 
 import fs from "fs";
@@ -10,79 +21,49 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// ── Inline migration engine (mirrors migrator.ts exactly) ─────────────────
+// ── Colors ───────────────────────────────────────────────────────────────────
+const noColor = process.argv.includes("--no-color") || !process.stdout.isTTY;
+const c = {
+  green: noColor ? "" : "\x1b[32m",
+  red: noColor ? "" : "\x1b[31m",
+  yellow: noColor ? "" : "\x1b[33m",
+  cyan: noColor ? "" : "\x1b[36m",
+  blue: noColor ? "" : "\x1b[34m",
+  magenta: noColor ? "" : "\x1b[35m",
+  bold: noColor ? "" : "\x1b[1m",
+  dim: noColor ? "" : "\x1b[2m",
+  reset: noColor ? "" : "\x1b[0m",
+};
+
+// ── Inline migration engine ───────────────────────────────────────────────────
 
 const IMPORT_MAP = {
-  // RPC / Connection
-  Connection: { pkg: "@solana/rpc" },
-  clusterApiUrl: { pkg: "@solana/rpc" },
-  Commitment: { pkg: "@solana/rpc-types" },
-  GetProgramAccountsFilter: { pkg: "@solana/rpc-types" },
-  RpcResponseAndContext: { pkg: "@solana/rpc-types" },
-  SignatureResult: { pkg: "@solana/rpc-types" },
-  ConfirmedSignatureInfo: { pkg: "@solana/rpc-types" },
-  BlockResponse: { pkg: "@solana/rpc-types" },
-  FeeCalculator: { pkg: "@solana/rpc-types" },
-  EpochInfo: { pkg: "@solana/rpc-types" },
-  PerfSample: { pkg: "@solana/rpc-types" },
-  SimulatedTransactionResponse: { pkg: "@solana/rpc-types" },
-  // Addresses / PublicKey
-  PublicKey: { pkg: "@solana/addresses", name: "Address" },
-  PublicKeyInitData: { pkg: "@solana/addresses" },
-  MAX_SEED_LENGTH: { pkg: "@solana/addresses" },
-  // Signers / Keypair
-  Keypair: { pkg: "@solana/signers" },
-  Signer: { pkg: "@solana/signers" },
-  // Accounts
-  AccountInfo: { pkg: "@solana/accounts" },
-  ParsedAccountData: { pkg: "@solana/accounts" },
-  KeyedAccount: { pkg: "@solana/accounts" },
-  // Transactions
-  Transaction: { pkg: "@solana/transactions" },
-  TransactionInstruction: { pkg: "@solana/transactions" },
-  TransactionInstructionCtorFields: { pkg: "@solana/transactions" },
-  VersionedTransaction: { pkg: "@solana/transactions" },
-  TransactionMessage: { pkg: "@solana/transactions" },
-  MessageV0: { pkg: "@solana/transactions" },
-  sendAndConfirmTransaction: { pkg: "@solana/transactions" },
-  sendAndConfirmRawTransaction: { pkg: "@solana/transactions" },
-  // Programs
-  SystemProgram: { pkg: "@solana/programs" },
-  SystemInstruction: { pkg: "@solana/programs" },
-  ComputeBudgetProgram: { pkg: "@solana/programs" },
-  StakeProgram: { pkg: "@solana/programs" },
-  VoteProgram: { pkg: "@solana/programs" },
-  // SPL Token
-  TOKEN_PROGRAM_ID: { pkg: "@solana/spl-token", name: "TOKEN_PROGRAM_ADDRESS" },
-  ASSOCIATED_TOKEN_PROGRAM_ID: { pkg: "@solana/spl-token", name: "ASSOCIATED_TOKEN_PROGRAM_ADDRESS" },
-  // Sysvars
+  Connection: { pkg: "@solana/rpc", name: "createSolanaRpc" },
+  Keypair: { pkg: "@solana/signers", name: "generateKeyPairSigner" },
+  PublicKey: { pkg: "@solana/addresses", name: "address" },
+  Transaction: { pkg: "@solana/transaction-messages", name: "createTransactionMessage" },
+  VersionedTransaction: { pkg: "@solana/transactions", name: null },
+  TransactionMessage: { pkg: "@solana/transaction-messages", name: null },
+  SystemProgram: { pkg: "@solana/programs", name: "getSystemProgramInstruction" },
+  sendAndConfirmTransaction: { pkg: "@solana/transaction-confirmation", name: "sendAndConfirmTransactionFactory" },
+  LAMPORTS_PER_SOL: { pkg: "@solana/rpc-types", name: "LAMPORTS_PER_SOL" },
   SYSVAR_RENT_PUBKEY: { pkg: "@solana/sysvars", name: "SYSVAR_RENT_ADDRESS" },
   SYSVAR_CLOCK_PUBKEY: { pkg: "@solana/sysvars", name: "SYSVAR_CLOCK_ADDRESS" },
   SYSVAR_INSTRUCTIONS_PUBKEY: { pkg: "@solana/sysvars", name: "SYSVAR_INSTRUCTIONS_ADDRESS" },
-  SYSVAR_STAKE_HISTORY_PUBKEY: { pkg: "@solana/sysvars", name: "SYSVAR_STAKE_HISTORY_ADDRESS" },
-  SYSVAR_EPOCH_SCHEDULE_PUBKEY: { pkg: "@solana/sysvars", name: "SYSVAR_EPOCH_SCHEDULE_ADDRESS" },
-  SYSVAR_SLOT_HASHES_PUBKEY: { pkg: "@solana/sysvars", name: "SYSVAR_SLOT_HASHES_ADDRESS" },
-  // Codecs
+  clusterApiUrl: { pkg: "@solana/rpc", name: null },
   bs58: { pkg: "@solana/codecs", name: "getBase58Encoder" },
-  // Constants
-  LAMPORTS_PER_SOL: { pkg: "@solana/kit" },
+  TOKEN_PROGRAM_ID: { pkg: "@solana-program/token", name: "TOKEN_PROGRAM_ADDRESS" },
+  ASSOCIATED_TOKEN_PROGRAM_ID: { pkg: "@solana-program/token", name: "ASSOCIATED_TOKEN_PROGRAM_ADDRESS" },
 };
 
 const TRANSFORMS = [
-  // ── Web3 namespace forms — must come before generic patterns ───────────────
-  { category: "connection", pattern: /new\s+web3\.Connection\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `createSolanaRpc(${m[1].trim()})` },
-  { category: "keypair", pattern: /web3\.Keypair\.generate\s*\(\s*\)/g, replacement: "await generateKeyPairSigner()" },
-  { category: "keypair", pattern: /web3\.Keypair\.fromSecretKey\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `await createKeyPairSignerFromBytes(${m[1].trim()})` },
-  { category: "publickey", pattern: /new\s+web3\.PublicKey\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `address(${m[1].trim()})` },
-  { category: "publickey", pattern: /web3\.PublicKey\.findProgramAddressSync\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g, replacement: (m) => `getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })` },
-  { category: "publickey", pattern: /web3\.PublicKey\.findProgramAddress\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g, replacement: (m) => `getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })` },
   // ── Connection → RPC ──────────────────────────────────────────────────────
   { category: "connection", pattern: /new\s+Connection\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `createSolanaRpc(${m[1].trim()})` },
   { category: "connection", pattern: /(\w+)\.getBalance\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getBalance(${m[2].trim()}).send()` },
   { category: "connection", pattern: /(\w+)\.getAccountInfo\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getAccountInfo(${m[2].trim()}).send()` },
   { category: "connection", pattern: /(\w+)\.getTokenAccountBalance\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getTokenAccountBalance(${m[2].trim()}).send()` },
   { category: "connection", pattern: /(\w+)\.getTransaction\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getTransaction(${m[2].trim()}).send()` },
-  { category: "connection", pattern: /(\w+)\.getSlot\s*\(\s*([^)]*)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getSlot(${m[2].trim()}).send()` },
+  { category: "connection", pattern: /(\w+)\.getSlot\s*\(\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getSlot().send()` },
   { category: "connection", pattern: /(\w+)\.getLatestBlockhash\s*\(\s*([^)]*)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getLatestBlockhash(${m[2].trim()}).send()` },
   { category: "connection", pattern: /(\w+)\.getProgramAccounts\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getProgramAccounts(${m[2].trim()}).send()` },
   { category: "connection", pattern: /(\w+)\.getTokenSupply\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getTokenSupply(${m[2].trim()}).send()` },
@@ -93,19 +74,29 @@ const TRANSFORMS = [
   { category: "connection", pattern: /(\w+)\.confirmTransaction\s*\(\s*(\w+)\s*\)/g, flaggedForAI: true, replacement: (m) => `/* TODO: AI_REQUIRED — await ${m[1]}.getSignatureStatuses([${m[2]}]).send() then check confirmations */` },
   { category: "connection", pattern: /(\w+)\.confirmTransaction\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g, flaggedForAI: true, replacement: (m) => `/* TODO: AI_REQUIRED — await ${m[1]}.getSignatureStatuses([${m[2].trim()}]).send() */` },
   { category: "connection", pattern: /(\w+)\.requestAirdrop\s*\(\s*([^,]+),\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.requestAirdrop(${m[2].trim()}, ${m[3].trim()}).send()` },
-  { category: "connection", pattern: /clusterApiUrl\s*\(\s*(['"])([\w-]+)\1\s*\)/g, replacement: (m) => `\`https://api.${m[2]}.solana.com\`` },
-
+  { category: "connection", pattern: /clusterApiUrl\s*\(\s*(['"])(\w+)\1\s*\)/g, replacement: (m) => `\`https://api.${m[2]}.solana.com\`` },
+  { category: "connection", pattern: /(\w+)\.getSignatureStatuses\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getSignatureStatuses(${m[2].trim()}).send()` },
+  { category: "connection", pattern: /(\w+)\.simulateTransaction\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.simulateTransaction(${m[2].trim()}).send()` },
+  { category: "connection", pattern: /(\w+)\.sendRawTransaction\s*\(\s*([^)]+)\s*\)/g, flaggedForAI: true, replacement: (m) => `/* TODO: AI_REQUIRED — sendTransactionFactory({ rpc: ${m[1]} })(${m[2].trim()}) — use getBase64EncodedWireTransaction() */` },
+  { category: "connection", pattern: /(\w+)\.getBlockTime\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getBlockTime(${m[2].trim()}).send()` },
+  { category: "connection", pattern: /(\w+)\.getEpochInfo\s*\(\s*([^)]*)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getEpochInfo(${m[2].trim()}).send()` },
+  { category: "connection", pattern: /(\w+)\.getRecentPerformanceSamples\s*\(\s*([^)]*)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getRecentPerformanceSamples(${m[2].trim()}).send()` },
+  { category: "connection", pattern: /(\w+)\.getTokenAccountsByOwner\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getTokenAccountsByOwner(${m[2].trim()}).send()` },
+  { category: "connection", pattern: /(\w+)\.getBlocks\s*\(\s*([^)]+)\s*\)(?!\s*\.send\b)/g, replacement: (m) => `${m[1]}.getBlocks(${m[2].trim()}).send()` },
+  { category: "connection", pattern: /(\w+)\.getNonce\s*\(\s*([^)]+)\s*\)/g, flaggedForAI: true, replacement: (m) => `/* TODO: AI_REQUIRED — use durable nonce via getAccountInfo + NonceAccount.fromAccountData in @solana/kit */` },
+  { category: "connection", pattern: /web3\.Connection\b/g, replacement: "createSolanaRpc" },
   // ── Keypair → KeyPairSigner ────────────────────────────────────────────────
+  { category: "keypair", pattern: /web3\.Keypair\b/g, replacement: "/* generateKeyPairSigner */ await generateKeyPairSigner" },
   { category: "keypair", pattern: /Keypair\.generate\s*\(\s*\)/g, replacement: "await generateKeyPairSigner()" },
   { category: "keypair", pattern: /Keypair\.fromSecretKey\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `await createKeyPairSignerFromBytes(${m[1].trim()})` },
   { category: "keypair", pattern: /Keypair\.fromSeed\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `await createKeyPairSignerFromBytes(${m[1].trim()})` },
   { category: "keypair", pattern: /(\w+)\.publicKey\b/g, replacement: (m) => `${m[1]}.address` },
   { category: "keypair", pattern: /(\w+)\.secretKey\b/g, flaggedForAI: true, replacement: (m) => `${m[1]}.secretKey /* TODO: AI_REQUIRED — secretKey not exposed in @solana/kit KeyPairSigner */` },
-
   // ── PublicKey → address() ──────────────────────────────────────────────────
+  { category: "publickey", pattern: /web3\.PublicKey\b/g, replacement: "address" },
   { category: "publickey", pattern: /new\s+PublicKey\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `address(${m[1].trim()})` },
-  { category: "publickey", pattern: /PublicKey\.findProgramAddressSync\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g, replacement: (m) => `getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })` },
-  { category: "publickey", pattern: /PublicKey\.findProgramAddress\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g, replacement: (m) => `getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })` },
+  { category: "publickey", pattern: /PublicKey\.findProgramAddressSync\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g, replacement: (m) => `await getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })` },
+  { category: "publickey", pattern: /PublicKey\.findProgramAddress\s*\(\s*([^,]+),\s*([^)]+)\s*\)/g, replacement: (m) => `await getProgramDerivedAddress({ programAddress: ${m[2].trim()}, seeds: ${m[1].trim()} })` },
   { category: "publickey", pattern: /PublicKey\.createWithSeed\s*\(\s*([^,]+),\s*([^,]+),\s*([^)]+)\s*\)/g, flaggedForAI: true, replacement: (m) => `/* TODO: AI_REQUIRED — getAddressWithSeed({ baseAddress: ${m[1].trim()}, programAddress: ${m[3].trim()}, seed: ${m[2].trim()} }) */` },
   { category: "publickey", pattern: /PublicKey\.isOnCurve\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `isAddress(${m[1].trim()})` },
   { category: "publickey", pattern: /SystemProgram\.programId\b/g, replacement: "SYSTEM_PROGRAM_ADDRESS" },
@@ -116,21 +107,16 @@ const TRANSFORMS = [
   { category: "publickey", pattern: /SYSVAR_INSTRUCTIONS_PUBKEY\b/g, replacement: "SYSVAR_INSTRUCTIONS_ADDRESS" },
   { category: "publickey", pattern: /(\w+)\.toBase58\s*\(\s*\)/g, replacement: (m) => m[1] },
   { category: "publickey", pattern: /(\w+)\.equals\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `(${m[1]} === ${m[2].trim()})` },
-
   // ── Transactions ───────────────────────────────────────────────────────────
   { category: "transaction", pattern: /new\s+Transaction\s*\(\s*\)(?!\s*\.add)/g, replacement: "createTransactionMessage({ version: 0 })" },
   { category: "transaction", pattern: /(\w+)\s*=\s*new\s+Transaction\s*\(\s*\)/g, replacement: (m) => `${m[1]} = createTransactionMessage({ version: 0 })` },
   { category: "transaction", pattern: /(\w+)\.add\s*\(\s*(\w+)\s*\)/g, replacement: (m) => `appendTransactionMessageInstruction(${m[2]}, ${m[1]})` },
   { category: "transaction", pattern: /(\w+)\.feePayer\s*=\s*(\w+\.address|\w+)/g, replacement: (m) => `${m[1]} = setTransactionMessageFeePayerSigner(${m[2]}, ${m[1]})` },
   { category: "transaction", pattern: /(\w+)\.recentBlockhash\s*=\s*(\w+(?:\.\w+)*)/g, replacement: (m) => `${m[1]} = setTransactionMessageLifetimeUsingBlockhash({ blockhash: ${m[2]}, lastValidBlockHeight: BigInt(0) }, ${m[1]})` },
-  { category: "transaction", pattern: /(\w+)\.sendTransaction\s*\(\s*(\w+),\s*\[([^\]]+)\]\s*\)/g, replacement: (m) => `await sendAndConfirmTransactionFactory({ rpc: ${m[1]} })(${m[2]}, { commitment: 'confirmed' })` },
-  // AUTO: simple named-variable form
   { category: "transaction", pattern: /sendAndConfirmTransaction\s*\(\s*(\w+),\s*(\w+),\s*\[([^\]]+)\]\s*\)/g, replacement: (m) => `await sendAndConfirmTransactionFactory({ rpc: ${m[1]} })(${m[2]}, { commitment: 'confirmed' })` },
-  // FLAGGED: complex chained
   { category: "transaction", pattern: /new\s+Transaction\s*\(\s*\)\s*\.add\s*\(/g, flaggedForAI: true, replacement: "/* TODO: AI_REQUIRED — pipe(createTransactionMessage({version:0}), appendTransactionMessageInstructions([" },
   { category: "transaction", pattern: /new\s+VersionedTransaction\s*\(\s*([^)]+)\s*\)/g, flaggedForAI: true, replacement: (m) => `/* TODO: AI_REQUIRED — compileTransaction(${m[1].trim()}) */` },
   { category: "transaction", pattern: /TransactionMessage\.decompile\s*\(\s*([^)]+)\s*\)/g, flaggedForAI: true, replacement: (m) => `/* TODO: AI_REQUIRED — decompileTransaction(${m[1].trim()}) */` },
-
   // ── Buffer / encoding ──────────────────────────────────────────────────────
   { category: "buffer", pattern: /bs58\.encode\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `getBase58Encoder().encode(${m[1].trim()})` },
   { category: "buffer", pattern: /bs58\.decode\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `getBase58Decoder().decode(${m[1].trim()})` },
@@ -138,15 +124,13 @@ const TRANSFORMS = [
   { category: "buffer", pattern: /Buffer\.alloc\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `new Uint8Array(${m[1].trim()})` },
   { category: "buffer", pattern: /Buffer\.concat\s*\(\s*([^)]+)\s*\)/g, replacement: (m) => `new Uint8Array([...${m[1].trim()}.flat()])` },
   { category: "buffer", pattern: /(\w+)\.toBuffer\s*\(\s*\)/g, replacement: (m) => `new Uint8Array(${m[1]})` },
-
   // ── Lamports ───────────────────────────────────────────────────────────────
-  { category: "lamports", pattern: /web3\.LAMPORTS_PER_SOL\b/g, replacement: "LAMPORTS_PER_SOL" },
   { category: "lamports", pattern: /(\d+(?:\.\d+)?)\s*\*\s*LAMPORTS_PER_SOL\b/g, replacement: (m) => `lamports(BigInt(${m[1]} * 1_000_000_000))` },
 ];
 
 function rewriteImports(code, transforms) {
   const importRegex = /import\s*\{([^}]+)\}\s*from\s*['"](@solana\/web3\.js|solana-web3\.js)['"]/g;
-  let result = code.replace(importRegex, (fullMatch, importList) => {
+  return code.replace(importRegex, (fullMatch, importList) => {
     const names = importList.split(",").map((n) => n.trim()).filter(Boolean);
     const pkgMap = {};
     for (const name of names) {
@@ -162,19 +146,11 @@ function rewriteImports(code, transforms) {
     transforms.push({ category: "imports", original: fullMatch, transformed: newImports, flaggedForAI: false });
     return newImports;
   });
-  const starRegex = /import\s*\*\s*as\s+(\w+)\s+from\s*['"]@solana\/web3\.js['"]/g;
-  result = result.replace(starRegex, (_match, alias) => {
-    const replacement = `import * as ${alias} from '@solana/kit'`;
-    transforms.push({ category: "imports", original: _match, transformed: replacement, flaggedForAI: false });
-    return replacement;
-  });
-  return result;
 }
 
 function migrateCode(code) {
   const transforms = [];
   let result = rewriteImports(code, transforms);
-
   for (const t of TRANSFORMS) {
     const regex = new RegExp(t.pattern.source, t.pattern.flags);
     const matches = [];
@@ -192,18 +168,18 @@ function migrateCode(code) {
       result = chars.join("");
     }
   }
-
   const automaticChanges = transforms.filter((t) => !t.flaggedForAI).length;
   const aiRequiredChanges = transforms.filter((t) => t.flaggedForAI).length;
   const totalChanges = transforms.length;
   const coveragePercent = totalChanges === 0 ? 100 : Math.round((automaticChanges / totalChanges) * 100);
   const byCategory = {};
   for (const t of transforms) byCategory[t.category] = (byCategory[t.category] ?? 0) + 1;
-
   return { transformedCode: result, transforms, stats: { totalChanges, automaticChanges, aiRequiredChanges, coveragePercent, byCategory } };
 }
 
-// ── File discovery ──────────────────────────────────────────────────────────
+function hasWeb3Import(code) {
+  return /@solana\/web3\.js/.test(code);
+}
 
 function walkFiles(dir, exts, result = []) {
   if (!fs.existsSync(dir)) return result;
@@ -218,109 +194,186 @@ function walkFiles(dir, exts, result = []) {
   return result;
 }
 
-function hasWeb3Import(code) {
-  return /@solana\/web3\.js/.test(code);
+// ── CLI ───────────────────────────────────────────────────────────────────────
+
+function printHelp() {
+  console.log(`
+${c.bold}solana-kit-migrator${c.reset} — Migrate @solana/web3.js v1 → @solana/kit
+
+${c.bold}USAGE${c.reset}
+  node scripts/src/cli.mjs <path> [options]
+  npx solana-kit-migrator <path> [options]
+
+${c.bold}ARGUMENTS${c.reset}
+  <path>        File or directory to migrate
+
+${c.bold}OPTIONS${c.reset}
+  --write       Write migrated files in-place (default: dry-run)
+  --ext         Comma-separated extensions (default: ts,tsx,js,jsx,mjs)
+  --summary     Print aggregate stats only
+  --no-color    Disable color output
+  --help        Show this help
+
+${c.bold}EXAMPLES${c.reset}
+  # Dry-run preview on a directory
+  node scripts/src/cli.mjs ./src
+
+  # Write migrations in-place
+  node scripts/src/cli.mjs ./src --write
+
+  # Migrate a single file
+  node scripts/src/cli.mjs ./src/connection.ts --write
+
+  # Only TypeScript files
+  node scripts/src/cli.mjs ./src --ext ts,tsx --write
+`);
 }
 
-// ── Test runner ─────────────────────────────────────────────────────────────
+function bar(n, total, width = 20) {
+  const filled = Math.round((n / Math.max(total, 1)) * width);
+  return c.green + "█".repeat(filled) + c.dim + "░".repeat(width - filled) + c.reset;
+}
 
-function testRepo(repoName, repoDir) {
-  const files = walkFiles(repoDir, [".ts", ".tsx", ".js", ".jsx", ".mjs"]);
-  const web3Files = files.filter((f) => {
+function fmtPercent(n) {
+  if (n === 100) return `${c.green}${c.bold}${n}%${c.reset}`;
+  if (n >= 80) return `${c.yellow}${n}%${c.reset}`;
+  return `${c.red}${n}%${c.reset}`;
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+
+  if (args.includes("--help") || args.length === 0) {
+    printHelp();
+    process.exit(0);
+  }
+
+  const targetArg = args.find((a) => !a.startsWith("--"));
+  if (!targetArg) {
+    console.error(`${c.red}Error: no path provided. Run --help for usage.${c.reset}`);
+    process.exit(1);
+  }
+
+  const targetPath = path.resolve(targetArg);
+  if (!fs.existsSync(targetPath)) {
+    console.error(`${c.red}Error: path not found: ${targetPath}${c.reset}`);
+    process.exit(1);
+  }
+
+  const doWrite = args.includes("--write");
+  const summaryOnly = args.includes("--summary");
+  const extFlagIdx = args.indexOf("--ext");
+  const extFlagEq = args.find((a) => a.startsWith("--ext="));
+  const extArg = extFlagEq
+    ? extFlagEq.split("=")[1]
+    : extFlagIdx !== -1
+      ? args[extFlagIdx + 1]
+      : "ts,tsx,js,jsx,mjs";
+  const exts = extArg.split(",").map((e) => (e.startsWith(".") ? e : `.${e}`));
+
+  // Find files
+  const stat = fs.statSync(targetPath);
+  const allFiles = stat.isFile()
+    ? [targetPath]
+    : walkFiles(targetPath, exts);
+
+  const web3Files = allFiles.filter((f) => {
     try { return hasWeb3Import(fs.readFileSync(f, "utf8")); } catch { return false; }
   });
 
+  console.log(`
+${c.bold}${c.cyan}solana-kit-migrator${c.reset}
+${c.dim}@solana/web3.js v1 → @solana/kit${c.reset}
+
+${c.bold}Target:${c.reset}  ${targetPath}
+${c.bold}Mode:${c.reset}    ${doWrite ? `${c.yellow}WRITE (files will be modified)${c.reset}` : `${c.cyan}DRY-RUN (no files changed)${c.reset}`}
+${c.bold}Scanned:${c.reset} ${allFiles.length} files | ${c.bold}${web3Files.length}${c.reset} contain @solana/web3.js
+`);
+
   if (web3Files.length === 0) {
-    return { repoName, filesScanned: files.length, filesWithWeb3: 0, totalChanges: 0, automaticChanges: 0, aiRequiredChanges: 0, coveragePercent: 100, byCategory: {}, sampleTransforms: [] };
+    console.log(`${c.green}✓ No @solana/web3.js imports found — nothing to migrate.${c.reset}\n`);
+    process.exit(0);
   }
 
-  let totalChanges = 0, automaticChanges = 0, aiRequiredChanges = 0;
+  // Process files
+  let totalChanges = 0;
+  let totalAutomatic = 0;
+  let totalAI = 0;
   const byCategory = {};
-  const sampleTransforms = [];
+  const fileResults = [];
 
-  for (const f of web3Files) {
-    let code;
-    try { code = fs.readFileSync(f, "utf8"); } catch { continue; }
-    const result = migrateCode(code);
-    totalChanges += result.stats.totalChanges;
-    automaticChanges += result.stats.automaticChanges;
-    aiRequiredChanges += result.stats.aiRequiredChanges;
-    for (const [cat, count] of Object.entries(result.stats.byCategory)) {
+  for (const filePath of web3Files) {
+    const code = fs.readFileSync(filePath, "utf8");
+    const { transformedCode, stats } = migrateCode(code);
+    const rel = path.relative(process.cwd(), filePath);
+
+    totalChanges += stats.totalChanges;
+    totalAutomatic += stats.automaticChanges;
+    totalAI += stats.aiRequiredChanges;
+    for (const [cat, count] of Object.entries(stats.byCategory)) {
       byCategory[cat] = (byCategory[cat] ?? 0) + count;
     }
-    if (sampleTransforms.length < 4) {
-      for (const t of result.transforms.slice(0, 2)) {
-        sampleTransforms.push({ file: path.relative(repoDir, f), ...t });
+
+    fileResults.push({ filePath, rel, stats, transformedCode, original: code });
+
+    if (!summaryOnly) {
+      const icon = stats.aiRequiredChanges > 0 ? `${c.yellow}⚠${c.reset}` : `${c.green}✓${c.reset}`;
+      const changed = stats.totalChanges > 0;
+      console.log(`${icon} ${c.bold}${rel}${c.reset}`);
+      if (changed) {
+        console.log(`   ${bar(stats.automaticChanges, stats.totalChanges)} ${fmtPercent(stats.coveragePercent)} automated  ${c.dim}(${stats.automaticChanges} auto, ${stats.aiRequiredChanges} needs AI)${c.reset}`);
+        const cats = Object.entries(stats.byCategory).map(([k, v]) => `${k}:${v}`).join("  ");
+        if (cats) console.log(`   ${c.dim}${cats}${c.reset}`);
+      } else {
+        console.log(`   ${c.dim}(no changes needed)${c.reset}`);
       }
+    }
+
+    if (doWrite && transformedCode !== code) {
+      fs.writeFileSync(filePath, transformedCode, "utf8");
     }
   }
 
-  const coveragePercent = totalChanges === 0 ? 100 : Math.round((automaticChanges / totalChanges) * 100);
-  return { repoName, filesScanned: files.length, filesWithWeb3: web3Files.length, totalChanges, automaticChanges, aiRequiredChanges, coveragePercent, byCategory, sampleTransforms };
-}
+  // Summary
+  const overallPct = totalChanges === 0 ? 100 : Math.round((totalAutomatic / totalChanges) * 100);
 
-// ── Main ────────────────────────────────────────────────────────────────────
+  console.log(`
+${c.bold}${"─".repeat(60)}${c.reset}
+${c.bold}MIGRATION SUMMARY${c.reset}
 
-const REPOS = [
-  { name: "solana-labs/example-helloworld",         dir: "/tmp/solana-test-repos/example-helloworld" },
-  { name: "metaplex-foundation/mpl-token-metadata", dir: "/tmp/solana-test-repos/mpl-token-metadata" },
-  { name: "solana-labs/solana-web3.js",             dir: "/tmp/solana-test-repos/solana-web3.js" },
-  { name: "solana-developers/solana-cookbook",      dir: "/tmp/solana-test-repos/solana-cookbook" },
-  { name: "solana-developers/program-examples",     dir: "/tmp/solana-test-repos/program-examples" },
-];
+  Files processed:   ${web3Files.length}
+  Total transforms:  ${totalChanges}
+  Automated:         ${c.green}${totalAutomatic}${c.reset} (${fmtPercent(overallPct)})
+  Needs AI:          ${totalAI > 0 ? c.yellow : c.green}${totalAI}${c.reset}
 
-console.log("=".repeat(70));
-console.log("  solana-kit-migrator — Real Repo Test Results");
-console.log("=".repeat(70));
-console.log();
+  ${bar(totalAutomatic, totalChanges, 30)} ${fmtPercent(overallPct)} automated
 
-const results = [];
-for (const repo of REPOS) {
-  if (!fs.existsSync(repo.dir)) { console.log(`SKIP  ${repo.name} (not cloned)\n`); continue; }
-  const r = testRepo(repo.name, repo.dir);
-  results.push(r);
+`);
 
-  console.log(`REPO  ${r.repoName}`);
-  console.log(`      Files scanned:   ${r.filesScanned}`);
-  console.log(`      Files with web3: ${r.filesWithWeb3}`);
-  if (r.totalChanges > 0) {
-    console.log(`      Total changes:   ${r.totalChanges}`);
-    console.log(`      Automated:       ${r.automaticChanges} (${r.coveragePercent}%)`);
-    console.log(`      AI required:     ${r.aiRequiredChanges}`);
-    console.log(`      By category:     ${JSON.stringify(r.byCategory)}`);
-    if (r.sampleTransforms.length > 0) {
-      console.log(`      Sample transforms:`);
-      for (const t of r.sampleTransforms.slice(0, 3)) {
-        console.log(`        [${t.category}] ${t.flaggedForAI ? "AI⚠ " : "AUTO"} "${t.original.slice(0, 65).replace(/\n/g, "\\n")}"`);
-      }
+  if (Object.keys(byCategory).length > 0) {
+    console.log(`${c.bold}By category:${c.reset}`);
+    for (const [cat, count] of Object.entries(byCategory).sort((a, b) => b[1] - a[1])) {
+      console.log(`  ${c.dim}${cat.padEnd(20)}${c.reset} ${count}`);
     }
+    console.log();
+  }
+
+  if (totalAI > 0) {
+    console.log(`${c.yellow}${c.bold}⚠  ${totalAI} transform(s) require AI assistance.${c.reset}`);
+    console.log(`${c.dim}   Search for TODO: AI_REQUIRED in your migrated files.${c.reset}\n`);
+  }
+
+  if (!doWrite) {
+    console.log(`${c.cyan}Dry-run complete. Run with ${c.bold}--write${c.reset}${c.cyan} to apply changes.${c.reset}\n`);
   } else {
-    console.log(`      (no @solana/web3.js usage found)`);
+    const written = fileResults.filter((r) => r.transformedCode !== r.original).length;
+    console.log(`${c.green}${c.bold}✓ ${written} file(s) written.${c.reset}\n`);
   }
-  console.log();
+
+  process.exit(0);
 }
 
-const totals = results.reduce((acc, r) => ({
-  filesScanned: acc.filesScanned + r.filesScanned,
-  filesWithWeb3: acc.filesWithWeb3 + r.filesWithWeb3,
-  totalChanges: acc.totalChanges + r.totalChanges,
-  automaticChanges: acc.automaticChanges + r.automaticChanges,
-  aiRequiredChanges: acc.aiRequiredChanges + r.aiRequiredChanges,
-}), { filesScanned: 0, filesWithWeb3: 0, totalChanges: 0, automaticChanges: 0, aiRequiredChanges: 0 });
-
-const overallCoverage = totals.totalChanges === 0 ? 100 : Math.round((totals.automaticChanges / totals.totalChanges) * 100);
-
-console.log("=".repeat(70));
-console.log("  AGGREGATE");
-console.log("=".repeat(70));
-console.log(`  Repos tested:        ${results.length}`);
-console.log(`  Total files scanned: ${totals.filesScanned}`);
-console.log(`  Files with web3.js:  ${totals.filesWithWeb3}`);
-console.log(`  Total changes:       ${totals.totalChanges}`);
-console.log(`  Automated:           ${totals.automaticChanges} (${overallCoverage}%)`);
-console.log(`  AI required:         ${totals.aiRequiredChanges}`);
-console.log("=".repeat(70));
-
-// Machine-readable JSON for updating constants
-console.log("\nJSON:");
-console.log(JSON.stringify({ results, totals, overallCoverage }, null, 2));
+main().catch((e) => {
+  console.error(`${c.red}Fatal error:${c.reset}`, e.message);
+  process.exit(1);
+});
