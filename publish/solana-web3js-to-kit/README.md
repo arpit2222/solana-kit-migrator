@@ -50,9 +50,16 @@ const derivedAddress = address("11111111111111111111111111111111");
 - Repository: <https://github.com/arpit2222/solana-kit-migrator>
 - License: MIT
 
-## Documentation
+## More context
 
-- [Strategy](./HACKATHON_STRATEGY.md)
-- [Judge checklist](./JUDGE_CHECKLIST.md)
-- [Requirements audit](./REQUIREMENTS_AUDIT.md)
-- [Case study](./artifacts/solana-migrator/CASE_STUDY.md)
+The migration engine is conservative by design:
+
+- deterministic transforms first
+- explicit `AI_REQUIRED` markers for structural edge cases
+- real-repo validation focus instead of toy examples
+
+See the repository for the judge checklist, requirements audit, and case study:
+
+- <https://github.com/arpit2222/solana-kit-migrator/blob/main/JUDGE_CHECKLIST.md>
+- <https://github.com/arpit2222/solana-kit-migrator/blob/main/REQUIREMENTS_AUDIT.md>
+- <https://github.com/arpit2222/solana-kit-migrator/blob/main/artifacts/solana-migrator/CASE_STUDY.md>
