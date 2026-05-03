@@ -1,0 +1,11 @@
+{
+  "buildCommand": "pnpm exec vite build --config vite.config.ts",
+  "outputDirectory": "public",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
