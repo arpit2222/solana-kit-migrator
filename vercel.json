@@ -1,6 +1,6 @@
 {
   "framework": "vite",
-  "buildCommand": "cd artifacts/solana-migrator && pnpm run build && cp -r dist ../..",
+  "buildCommand": "cd artifacts/solana-migrator && pnpm run build && node -e \"const fs = require('fs'); if (fs.existsSync('dist')) { const path = require('path'); const src = path.join(__dirname, 'dist'); const dest = path.join(__dirname, '../..', 'dist'); if (fs.existsSync(dest)) fs.rmSync(dest, { recursive: true }); fs.cpSync(src, dest, { recursive: true }); console.log('Copied dist to root'); } else { console.error('dist not found'); process.exit(1); }\"",
   "outputDirectory": "dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "rewrites": [
