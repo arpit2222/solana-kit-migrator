@@ -1,7 +1,7 @@
 {
   "framework": "vite",
-  "buildCommand": "pnpm --dir artifacts/solana-migrator exec vite build --config ../../vite.config.ts",
-  "outputDirectory": "dist",
+  "buildCommand": "cd artifacts/solana-migrator && vite build",
+  "outputDirectory": "artifacts/solana-migrator/dist",
   "installCommand": "pnpm install --frozen-lockfile",
   "rewrites": [
     {
