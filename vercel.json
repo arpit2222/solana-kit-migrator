@@ -1,0 +1,13 @@
+{
+  "framework": "vite",
+  "rootDirectory": "artifacts/solana-migrator",
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}
